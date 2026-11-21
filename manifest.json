@@ -1,0 +1,36 @@
+{
+  "manifest_version": 3,
+  "name": "Colek Balik 1-Klik Facebook",
+  "version": "1.0.0",
+  "description": "Balas semua colekan (Poke Back) yang tampil di halaman Facebook Pokes dalam satu kali klik.",
+  "permissions": [
+    "activeTab",
+    "scripting",
+    "storage"
+  ],
+  "host_permissions": [
+    "*://*.facebook.com/*",
+    "http://localhost/*",
+    "http://127.0.0.1/*"
+  ],
+  "action": {
+    "default_title": "Colek Balik 1-Klik",
+    "default_popup": "popup.html"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "*://*.facebook.com/pokes*",
+        "http://localhost/*",
+        "http://127.0.0.1/*"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "css": [
+        "content.css"
+      ],
+      "run_at": "document_idle"
+    }
+  ]
+}

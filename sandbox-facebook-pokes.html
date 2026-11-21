@@ -1,0 +1,540 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sandbox Simulator: Halaman Colekan Facebook (/pokes)</title>
+  <link rel="stylesheet" href="content.css">
+  <style>
+    :root {
+      --sim-bg: #F3F4F6;
+      --sim-surface: #FFFFFF;
+      --sim-border: #52525B;
+      --sim-text: #111827;
+      --sim-muted: #374151;
+      --sim-primary: #0F56B3;
+      --sim-primary-hover: #0B3F86;
+      --sim-primary-text: #FFFFFF;
+      --sim-secondary-bg: #E5E7EB;
+      --sim-secondary-text: #111827;
+      --sim-poked-bg: #DCFCE7;
+      --sim-poked-text: #166534;
+      --sim-focus: #0F56B3;
+    }
+
+    body[data-sim-theme="dark"] {
+      --sim-bg: #0F172A;
+      --sim-surface: #1E293B;
+      --sim-border: #94A3B8;
+      --sim-text: #F8FAFC;
+      --sim-muted: #CBD5E1;
+      --sim-primary: #60A5FA;
+      --sim-primary-hover: #93C5FD;
+      --sim-primary-text: #0F172A;
+      --sim-secondary-bg: #334155;
+      --sim-secondary-text: #F8FAFC;
+      --sim-poked-bg: #064E3B;
+      --sim-poked-text: #A7F3D0;
+      --sim-focus: #93C5FD;
+    }
+
+    *, *::before, *::after {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      padding: 0 0 180px 0;
+      background-color: var(--sim-bg);
+      color: var(--sim-text);
+      font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+      font-size: 15px;
+      line-height: 1.5;
+    }
+
+    .sim-navbar {
+      background-color: var(--sim-surface);
+      border-bottom: 2px solid var(--sim-border);
+      padding: 12px 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+
+    .sim-brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .sim-logo-placeholder {
+      font-family: 'Consolas', 'SFMono-Regular', monospace;
+      font-weight: 700;
+      font-size: 13px;
+      padding: 4px 8px;
+      border: 1.5px solid var(--sim-border);
+      border-radius: 4px;
+      background-color: var(--sim-bg);
+      color: var(--sim-text);
+    }
+
+    .sim-page-title {
+      margin: 0;
+      font-size: 18px;
+      font-weight: 700;
+    }
+
+    .sim-nav-links {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .sim-nav-link,
+    .sim-btn {
+      min-height: 44px;
+      padding: 8px 14px;
+      border-radius: 6px;
+      border: 1.5px solid var(--sim-border);
+      background-color: var(--sim-surface);
+      color: var(--sim-text);
+      font-size: 14px;
+      font-weight: 600;
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+    }
+
+    .sim-nav-link:hover,
+    .sim-btn:hover {
+      border-color: var(--sim-primary);
+    }
+
+    .sim-nav-link:focus-visible,
+    .sim-btn:focus-visible,
+    .fb-poke-btn:focus-visible,
+    .fb-hide-btn:focus-visible,
+    .sim-input:focus-visible {
+      outline: 3px solid var(--sim-focus);
+      outline-offset: 2px;
+    }
+
+    .sim-container {
+      max-width: 980px;
+      margin: 20px auto;
+      padding: 0 16px;
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 20px;
+    }
+
+    @media (min-width: 760px) {
+      .sim-container {
+        grid-template-columns: 320px 1fr;
+        align-items: start;
+      }
+    }
+
+    .sim-panel {
+      background-color: var(--sim-surface);
+      border: 1.5px solid var(--sim-border);
+      border-radius: 8px;
+      padding: 16px;
+    }
+
+    .sim-panel-title {
+      margin: 0 0 6px 0;
+      font-size: 16px;
+      font-weight: 700;
+    }
+
+    .sim-panel-desc {
+      margin: 0 0 14px 0;
+      font-size: 13px;
+      color: var(--sim-muted);
+    }
+
+    .sim-control-stack {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .sim-form-group {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      margin-top: 8px;
+      padding-top: 12px;
+      border-top: 1px solid var(--sim-border);
+    }
+
+    .sim-label {
+      font-size: 13px;
+      font-weight: 600;
+    }
+
+    .sim-input {
+      min-height: 44px;
+      padding: 8px 10px;
+      border-radius: 6px;
+      border: 1.5px solid var(--sim-border);
+      background-color: var(--sim-bg);
+      color: var(--sim-text);
+      font-size: 14px;
+    }
+
+    .fb-pokes-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      margin-bottom: 14px;
+      padding-bottom: 10px;
+      border-bottom: 1.5px solid var(--sim-border);
+    }
+
+    .fb-pokes-list {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .poke-card {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 12px;
+      padding: 12px;
+      border-radius: 8px;
+      border: 1.5px solid var(--sim-border);
+      background-color: var(--sim-bg);
+    }
+
+    .poke-user-info {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .poke-avatar {
+      width: 44px;
+      height: 44px;
+      border-radius: 6px;
+      border: 1.5px solid var(--sim-border);
+      background-color: var(--sim-surface);
+      color: var(--sim-text);
+      font-family: 'Consolas', 'SFMono-Regular', monospace;
+      font-weight: 700;
+      font-size: 14px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+
+    .poke-user-text {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .poke-friend-name {
+      margin: 0;
+      font-size: 15px;
+      font-weight: 700;
+    }
+
+    .poke-meta {
+      margin: 0;
+      font-size: 13px;
+      color: var(--sim-muted);
+    }
+
+    .poke-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .fb-poke-btn {
+      min-height: 44px;
+      padding: 8px 16px;
+      border-radius: 6px;
+      border: 2px solid var(--sim-primary);
+      background-color: var(--sim-primary);
+      color: var(--sim-primary-text);
+      font-size: 14px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+
+    .fb-poke-btn:hover:not([aria-disabled="true"]) {
+      background-color: var(--sim-primary-hover);
+    }
+
+    .fb-poke-btn[data-cbf-poked="true"] {
+      background-color: var(--sim-poked-bg);
+      color: var(--sim-poked-text);
+      border-color: var(--sim-poked-text);
+      cursor: default;
+    }
+
+    .fb-hide-btn {
+      min-height: 44px;
+      padding: 8px 12px;
+      border-radius: 6px;
+      border: 1.5px solid var(--sim-border);
+      background-color: var(--sim-surface);
+      color: var(--sim-text);
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+
+    .fb-empty-box {
+      padding: 20px;
+      border-radius: 8px;
+      border: 1.5px dashed var(--sim-border);
+      text-align: center;
+      color: var(--sim-text);
+    }
+  </style>
+</head>
+<body data-sim-theme="light">
+  <header class="sim-navbar">
+    <div class="sim-brand">
+      <span class="sim-logo-placeholder">[LOGO]</span>
+      <h1 class="sim-page-title">Sandbox Simulator: Facebook /pokes</h1>
+    </div>
+    <nav class="sim-nav-links" aria-label="Navigasi simulator">
+      <a href="#sandbox-control-bar" class="sim-nav-link">Panel Skenario</a>
+      <a href="#fb-pokes-feed" class="sim-nav-link">Daftar Colekan</a>
+      <button type="button" id="sim-toggle-theme" class="sim-btn">Tema Simulator: Terang</button>
+    </nav>
+  </header>
+
+  <main class="sim-container">
+    <section id="sandbox-control-bar" class="sim-panel" aria-label="Kontrol Skenario Pengujian">
+      <h2 class="sim-panel-title">Kontrol Skenario Uji</h2>
+      <p class="sim-panel-desc">
+        Gunakan tombol di bawah untuk menguji bagaimana ekstensi merespons daftar colekan normal, daftar kosong (Empty State), maupun kegagalan klik (Error State).
+      </p>
+      <div class="sim-control-stack">
+        <button type="button" id="sim-reset-default" class="sim-btn">
+          Muat 5 Colekan Standar (ID &amp; EN)
+        </button>
+        <button type="button" id="sim-set-empty" class="sim-btn">
+          Uji Kondisi Kosong (0 Colekan)
+        </button>
+        <button type="button" id="sim-add-error-item" class="sim-btn">
+          Tambah 1 Tombol Uji Galat (Error State)
+        </button>
+      </div>
+
+      <form id="sim-add-friend-form" class="sim-form-group">
+        <label for="sim-friend-input" class="sim-label">Tambah Colekan Kustom</label>
+        <input
+          type="text"
+          id="sim-friend-input"
+          class="sim-input"
+          placeholder="Ketik label teman (misal: Teman Uji A)"
+          required
+        />
+        <button type="submit" id="sim-add-friend-btn" class="sim-btn">
+          Tambahkan ke Daftar Colekan
+        </button>
+      </form>
+    </section>
+
+    <section id="fb-pokes-feed" class="sim-panel" aria-label="Simulasi Daftar Colekan Masuk Facebook">
+      <div class="fb-pokes-header">
+        <div>
+          <h2 class="sim-panel-title">Colekan Masuk</h2>
+          <p class="sim-panel-desc" style="margin-bottom: 0;">
+            Struktur DOM meniru elemen <code>div[role="button"]</code> dan <code>aria-label="Colek Balik"</code> / <code>"Poke Back"</code> pada halaman Facebook Pokes.
+          </p>
+        </div>
+      </div>
+
+      <div id="pokes-list-container" class="fb-pokes-list"></div>
+    </section>
+  </main>
+
+  <script>
+    (function () {
+      const DEFAULT_ITEMS = [
+        { id: 'u1', initials: 'T1', name: 'Teman Simulasi #1', info: 'Mencolek kamu baru saja', label: 'Colek Balik', simulateError: false },
+        { id: 'u2', initials: 'T2', name: 'Teman Simulasi #2', info: 'Mencolek kamu 5 menit lalu', label: 'Colek Balik', simulateError: false },
+        { id: 'u3', initials: 'T3', name: 'Teman Simulasi #3', info: 'Poked you 12 minutes ago', label: 'Poke Back', simulateError: false },
+        { id: 'u4', initials: 'T4', name: 'Teman Simulasi #4', info: 'Mencolek kamu 30 menit lalu', label: 'Colek Balik', simulateError: false },
+        { id: 'u5', initials: 'T5', name: 'Teman Simulasi #5', info: 'Poked you 1 hour ago', label: 'Poke Back', simulateError: false }
+      ];
+
+      let items = DEFAULT_ITEMS.map((item) => ({ ...item, poked: false }));
+      const listContainer = document.getElementById('pokes-list-container');
+
+      function renderFeed() {
+        if (items.length === 0) {
+          listContainer.innerHTML = `
+            <div class="fb-empty-box">
+              <p style="margin: 0 0 8px 0; font-weight: 700;">Tidak ada colekan aktif di daftar ini.</p>
+              <p style="margin: 0; font-size: 13px;">Klik "Muat 5 Colekan Standar" pada panel kiri untuk mengisi ulang daftar simulasi.</p>
+            </div>
+          `;
+          return;
+        }
+
+        listContainer.innerHTML = items
+          .map((item) => {
+            const isPoked = item.poked;
+            const btnText = isPoked ? 'Sudah Dicolek Balik' : item.label;
+            const ariaLabel = isPoked ? `Sudah mencolek ${item.name}` : item.label;
+            return `
+              <article class="poke-card" data-poke-row="${item.id}">
+                <div class="poke-user-info">
+                  <span class="poke-avatar" aria-hidden="true">${item.initials}</span>
+                  <div class="poke-user-text">
+                    <h3 class="poke-friend-name" data-friend-name>${escapeHtml(item.name)}</h3>
+                    <p class="poke-meta">${escapeHtml(isPoked ? 'Colekan sudah dibalas pada sesi ini' : item.info)}</p>
+                  </div>
+                </div>
+                <div class="poke-actions">
+                  <div
+                    role="button"
+                    tabindex="0"
+                    class="fb-poke-btn"
+                    data-item-id="${item.id}"
+                    data-poke-target="${escapeHtml(item.name)}"
+                    data-simulate-error="${item.simulateError ? 'true' : 'false'}"
+                    ${isPoked ? 'data-cbf-poked="true" aria-disabled="true"' : ''}
+                    aria-label="${escapeHtml(ariaLabel)}"
+                  >${escapeHtml(btnText)}</div>
+                  <button type="button" class="fb-hide-btn" data-remove-id="${item.id}">
+                    Sembunyikan
+                  </button>
+                </div>
+              </article>
+            `;
+          })
+          .join('');
+
+        listContainer.querySelectorAll('.fb-poke-btn').forEach((btn) => {
+          const triggerPoke = () => {
+            const id = btn.getAttribute('data-item-id');
+            const targetItem = items.find((it) => it.id === id);
+            if (!targetItem) return;
+            // Allow re-poking if the button was mutated back to "Colek balik" (simulating Facebook real-time re-poke)
+            const currentLabel = (btn.textContent || '').trim().toLowerCase();
+            if (targetItem.poked && currentLabel !== 'colek balik' && currentLabel !== 'poke back') return;
+            if (targetItem.simulateError) return;
+            targetItem.poked = true;
+            btn.setAttribute('data-cbf-poked', 'true');
+            btn.setAttribute('aria-disabled', 'true');
+            btn.setAttribute('aria-label', `Sudah mencolek ${targetItem.name}`);
+            btn.textContent = 'Dicolek';
+            const card = btn.closest('.poke-card');
+            if (card) {
+              const meta = card.querySelector('.poke-meta');
+              if (meta) meta.textContent = 'Colekan sudah dibalas pada sesi ini';
+            }
+          };
+
+          btn.addEventListener('click', triggerPoke);
+          btn.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              btn.click();
+            }
+          });
+        });
+
+        listContainer.querySelectorAll('.fb-hide-btn').forEach((btn) => {
+          btn.addEventListener('click', () => {
+            const removeId = btn.getAttribute('data-remove-id');
+            items = items.filter((it) => it.id !== removeId);
+            renderFeed();
+            if (window.CBFController) window.CBFController.scanPage();
+          });
+        });
+      }
+
+      function escapeHtml(str) {
+        return String(str)
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;');
+      }
+
+      document.getElementById('sim-reset-default').addEventListener('click', () => {
+        items = DEFAULT_ITEMS.map((item) => ({ ...item, poked: false }));
+        renderFeed();
+        if (window.CBFController) window.CBFController.scanPage();
+      });
+
+      document.getElementById('sim-set-empty').addEventListener('click', () => {
+        items = [];
+        renderFeed();
+        if (window.CBFController) window.CBFController.scanPage();
+      });
+
+      document.getElementById('sim-add-error-item').addEventListener('click', () => {
+        const nextNum = items.length + 1;
+        items.unshift({
+          id: `err-${Date.now()}`,
+          initials: 'ER',
+          name: `Akun Uji Galat #${nextNum}`,
+          info: 'Tombol disetel gagal klik untuk menguji Error State',
+          label: 'Colek Balik',
+          simulateError: true,
+          poked: false
+        });
+        renderFeed();
+        if (window.CBFController) window.CBFController.scanPage();
+      });
+
+      document.getElementById('sim-add-friend-form').addEventListener('submit', (e) => {
+        e.preventDefault();
+        const input = document.getElementById('sim-friend-input');
+        const name = input.value.trim();
+        if (!name) return;
+        const initials = name.slice(0, 2).toUpperCase();
+        items.unshift({
+          id: `custom-${Date.now()}`,
+          initials,
+          name,
+          info: 'Baru saja ditambahkan dari form simulator',
+          label: 'Colek Balik',
+          simulateError: false,
+          poked: false
+        });
+        input.value = '';
+        renderFeed();
+        if (window.CBFController) window.CBFController.scanPage();
+      });
+
+      const themeBtn = document.getElementById('sim-toggle-theme');
+      themeBtn.addEventListener('click', () => {
+        const current = document.body.getAttribute('data-sim-theme') || 'light';
+        const next = current === 'light' ? 'dark' : 'light';
+        document.body.setAttribute('data-sim-theme', next);
+        themeBtn.textContent = `Tema Simulator: ${next === 'light' ? 'Terang' : 'Gelap'}`;
+        if (window.CBFController) {
+          window.CBFController.setTheme(next);
+        }
+      });
+
+      renderFeed();
+    })();
+  </script>
+  <script src="content.js"></script>
+</body>
+</html>

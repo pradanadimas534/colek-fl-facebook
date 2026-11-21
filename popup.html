@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Colek Balik 1-Klik Facebook</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body data-theme="light">
+  <main class="popup-shell">
+    <header class="popup-header">
+      <div>
+        <h1 class="popup-title">Colek Balik 1-Klik</h1>
+        <p class="popup-subtitle">Kontrol Ekstensi Facebook Pokes</p>
+      </div>
+      <button type="button" id="popup-theme-btn" class="popup-theme-btn" aria-label="Ganti tema terang atau gelap">
+        Gelap
+      </button>
+    </header>
+
+    <section class="popup-status-card" aria-label="Status pemindaian halaman">
+      <div class="popup-status-top">
+        <span id="popup-badge" class="popup-badge">[MEMUAT]</span>
+        <span id="popup-counters" class="popup-counters">Siap: 0 | Terbalas: 0</span>
+      </div>
+      <p id="popup-message" class="popup-message" role="status" aria-live="polite">
+        Memeriksa tab aktif untuk mencari tombol Colek Balik...
+      </p>
+    </section>
+
+    <section class="popup-actions" aria-label="Tombol aksi">
+      <button type="button" id="popup-poke-btn" class="popup-primary-btn">
+        Balas Semua Colekan Sekarang (0)
+      </button>
+      <div class="popup-secondary-row">
+        <button type="button" id="popup-scan-btn" class="popup-secondary-btn">
+          Pindai Ulang Tab
+        </button>
+        <a id="popup-open-pokes-link" class="popup-secondary-link" href="https://www.facebook.com/pokes" target="_blank" rel="noopener noreferrer">
+          Buka facebook.com/pokes
+        </a>
+      </div>
+    </section>
+
+    <section class="popup-log-section" aria-label="Catatan aktivitas">
+      <h2 class="popup-section-label">Catatan Aktivitas</h2>
+      <div id="popup-log-list" class="popup-log-list" role="log">
+        <p class="popup-log-item">Menunggu koneksi ke tab Facebook Pokes...</p>
+      </div>
+    </section>
+  </main>
+  <script src="popup.js"></script>
+</body>
+</html>
