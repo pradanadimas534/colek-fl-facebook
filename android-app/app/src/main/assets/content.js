@@ -29,11 +29,17 @@
     /^load more$/i
   ];
 
-  // Cooldown map per element reference so a button is not spammed within 2.5 seconds while GraphQL responds,
-  // but if Facebook reuses the exact same DOM row when the friend pokes back again, it WILL be detected and poked again!
+  // Cooldown map per element reference so a button is not spammed while GraphQL responds,
+  // but if Facebook reuses the exact same DOM row when the friend pokes back again, it will be detected and poked again.
   const recentClickTimestamps = new WeakMap();
-  const CLICK_COOLDOWN_MS = 2500;
+  const CLICK_COOLDOWN_MS = 3200;
 
+  // Facebook's server-side Anti-Spam (Sentry) triggers a temporary block when an account sends ~80-100 poke mutations
+  // in a single continuous burst (< 2 minutes). To avoid hitting the 100-action wall:
+  // - 'stealth' (Anti-Limit >100): 1600-3400ms humanized jitter + 8-14s micro-break every 15 pokes + 45s cooldown after 45 pokes.
+  // - 'safe': 1100-2200ms humanized jitter + 6-10s micro-break every 20 pokes.
+  // - 'fast': 350-650ms sequential delay.
+  // - 'instant': 35-60ms (only for local simulator / 1-5 items).
   const state = {
     theme: localStorage.getItem('cbf_theme') || 'light',
     collapsed: false,
@@ -41,20 +47,23 @@
     detectedCount: 0,
     pokedSessionCount: 0,
     isProcessing: false,
+    isCoolingDown: false,
+    cooldownRemainingSec: 0,
     cancelRequested: false,
-    // Default Auto-Pantau to TRUE so whenever a "Colek balik" button appears, it is immediately poked back.
     autoWatch: localStorage.getItem('cbf_auto_watch') !== 'false',
     autoScroll: localStorage.getItem('cbf_auto_scroll') !== 'false',
     currentBatchPoked: 0,
-    delayMode: localStorage.getItem('cbf_delay_mode') || 'safe',
+    delayMode: localStorage.getItem('cbf_delay_mode') || 'stealth',
     lastError: null,
     logs: []
   };
 
   function getDelayRange() {
-    if (state.delayMode === 'fast') return [250, 450];
+    if (state.delayMode === 'fast') return [350, 650];
     if (state.delayMode === 'instant') return [35, 60];
-    return [650, 1100];
+    if (state.delayMode === 'safe') return [1100, 2200];
+    // Default 'stealth' (Anti-Limit >100): natural human reading & tapping pace
+    return [1600, 3400];
   }
 
   function randomBetween(min, max) {
@@ -76,8 +85,8 @@
   function addLog(message) {
     const entry = `[${formatTime()}] ${message}`;
     state.logs.unshift(entry);
-    if (state.logs.length > 40) {
-      state.logs.length = 40;
+    if (state.logs.length > 45) {
+      state.logs.length = 45;
     }
     renderWidget();
   }
@@ -108,18 +117,14 @@
     if (!el || !el.isConnected) return false;
     if (el.disabled || el.getAttribute('aria-disabled') === 'true') return false;
 
-    // Only skip if it does NOT currently say "Colek balik" / "Poke Back"
-    // (e.g., when it already changed to "Dicolek" or "Sudah Dicolek Balik").
     if (!isCurrentlyPokeBackButton(el)) {
       return false;
     }
 
-    // If it was explicitly marked as a broken error-simulation button that already threw, skip it.
     if (el.getAttribute('data-cbf-error-skipped') === 'true') {
       return false;
     }
 
-    // Check short cooldown so we don't double-click while Facebook's network request is in flight.
     const lastClickedAt = recentClickTimestamps.get(el) || 0;
     const cooldown = state.delayMode === 'instant' ? 120 : CLICK_COOLDOWN_MS;
     if (Date.now() - lastClickedAt < cooldown) {
@@ -150,7 +155,6 @@
       return ariaMatch[1].trim();
     }
 
-    // Walk up DOM tree to find the specific row container for this friend (supports Facebook's obfuscated div classes).
     let curr = buttonEl.parentElement;
     while (curr && curr !== document.body) {
       const linkOrName = curr.querySelector('[data-friend-name], a[role="link"], a[href*="facebook.com"], strong, h3, h4');
@@ -239,11 +243,51 @@
     return null;
   }
 
-  // Dispatch complete Pointer + Mouse + Click sequence required by Facebook Comet React 18 event delegation.
-  function triggerHumanizedReactClick(targetEl) {
+  // Detect if Facebook displayed a rate-limit / temporary block dialog on screen.
+  function detectFacebookRateLimitWarning() {
+    const dialogs = document.querySelectorAll('[role="dialog"], [role="alert"], [aria-live="assertive"]');
+    for (const d of dialogs) {
+      const txt = (d.textContent || '').toLowerCase();
+      if (
+        txt.includes('terlalu cepat') ||
+        txt.includes('diblokir sementara') ||
+        txt.includes('coba lagi nanti') ||
+        txt.includes('you’re going too fast') ||
+        txt.includes("you're going too fast") ||
+        txt.includes('temporarily blocked') ||
+        txt.includes('try again later')
+      ) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  // Prefer Native Android MotionEvent touch tap when inside the APK (produces isTrusted=true hardware events!),
+  // and use randomized human coordinates + realistic press hold duration (55-135ms) in browser.
+  async function triggerHumanizedReactClick(targetEl) {
     const rect = targetEl.getBoundingClientRect();
-    const clientX = Math.round(rect.left + rect.width / 2);
-    const clientY = Math.round(rect.top + rect.height / 2);
+    // Randomize hit point within the middle 50% of the button so every click has unique (x, y) coordinates!
+    const jitterX = (Math.random() - 0.5) * Math.max(6, rect.width * 0.45);
+    const jitterY = (Math.random() - 0.5) * Math.max(4, rect.height * 0.45);
+    const clientX = Math.round(rect.left + rect.width / 2 + jitterX);
+    const clientY = Math.round(rect.top + rect.height / 2 + jitterY);
+
+    // If running inside our Android APK and native touch tap is available, use real Android MotionEvent (isTrusted = true)!
+    if (
+      window.AndroidBridge &&
+      typeof window.AndroidBridge.performTrustedTap === 'function' &&
+      state.delayMode !== 'instant'
+    ) {
+      try {
+        const dpr = window.devicePixelRatio || 1;
+        window.AndroidBridge.performTrustedTap(Math.round(clientX * dpr), Math.round(clientY * dpr));
+        await sleep(randomBetween(70, 140));
+        return;
+      } catch (_e) {
+        // Fallback to JS event dispatch if native tap fails
+      }
+    }
 
     const hitTarget = document.elementFromPoint(clientX, clientY);
     const dispatchEl =
@@ -254,7 +298,7 @@
         targetEl.focus({ preventScroll: true });
       }
     } catch (_e) {
-      // Ignore focus errors on non-focusable wrappers.
+      // Ignore focus errors
     }
 
     const commonInit = {
@@ -264,26 +308,31 @@
       view: window,
       clientX,
       clientY,
-      screenX: clientX,
-      screenY: clientY,
+      screenX: clientX + randomBetween(0, 15),
+      screenY: clientY + randomBetween(40, 80),
       button: 0,
       buttons: 1
     };
 
     if (typeof PointerEvent === 'function') {
       dispatchEl.dispatchEvent(
-        new PointerEvent('pointerover', { ...commonInit, pointerId: 1, pointerType: 'mouse', isPrimary: true })
+        new PointerEvent('pointerover', { ...commonInit, pointerId: 1, pointerType: 'touch', isPrimary: true })
       );
       dispatchEl.dispatchEvent(
-        new PointerEvent('pointerenter', { ...commonInit, bubbles: false, pointerId: 1, pointerType: 'mouse', isPrimary: true })
+        new PointerEvent('pointerenter', { ...commonInit, bubbles: false, pointerId: 1, pointerType: 'touch', isPrimary: true })
       );
       dispatchEl.dispatchEvent(
-        new PointerEvent('pointerdown', { ...commonInit, pointerId: 1, pointerType: 'mouse', isPrimary: true, pressure: 0.5 })
+        new PointerEvent('pointerdown', { ...commonInit, pointerId: 1, pointerType: 'touch', isPrimary: true, pressure: 0.6 })
       );
     }
 
     dispatchEl.dispatchEvent(new MouseEvent('mouseover', commonInit));
     dispatchEl.dispatchEvent(new MouseEvent('mousedown', commonInit));
+
+    // Realistic human finger press hold duration (45-120ms) before releasing!
+    if (state.delayMode !== 'instant') {
+      await sleep(randomBetween(45, 120));
+    }
 
     if (typeof PointerEvent === 'function') {
       dispatchEl.dispatchEvent(
@@ -291,7 +340,7 @@
           ...commonInit,
           buttons: 0,
           pointerId: 1,
-          pointerType: 'mouse',
+          pointerType: 'touch',
           isPrimary: true,
           pressure: 0
         })
@@ -302,16 +351,30 @@
     dispatchEl.dispatchEvent(new MouseEvent('click', { ...commonInit, buttons: 0, detail: 1 }));
   }
 
+  async function runCooldownTimer(seconds, reasonText) {
+    state.isCoolingDown = true;
+    state.status = 'COOLDOWN';
+    addLog(`${reasonText} (${seconds} detik)...`);
+    for (let rem = seconds; rem > 0; rem -= 1) {
+      if (state.cancelRequested) break;
+      state.cooldownRemainingSec = rem;
+      renderWidget();
+      await sleep(1000);
+    }
+    state.isCoolingDown = false;
+    state.cooldownRemainingSec = 0;
+  }
+
   async function tryLoadMorePokesFromPage() {
     if (!state.autoScroll) return false;
 
     const seeMoreBtn = findSeeMoreButton();
     if (seeMoreBtn) {
       addLog('Menekan tombol "Lihat Lainnya" untuk memuat daftar colekan berikutnya...');
-      seeMoreBtn.scrollIntoView({ block: 'center', behavior: 'instant' });
-      await sleep(60);
-      triggerHumanizedReactClick(seeMoreBtn);
-      const waitLoad = state.delayMode === 'instant' ? 80 : 900;
+      seeMoreBtn.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      await sleep(150);
+      await triggerHumanizedReactClick(seeMoreBtn);
+      const waitLoad = state.delayMode === 'instant' ? 80 : 1200;
       await sleep(waitLoad);
       return findPokeBackButtons().length > 0;
     }
@@ -400,9 +463,9 @@
 
     const [minDelay, maxDelay] = getDelayRange();
     if (!triggeredByWatcher) {
-      addLog(`Membalas semua tombol Colek Balik yang muncul (jeda ${minDelay}-${maxDelay}ms)...`);
+      addLog(`Mode ${state.delayMode.toUpperCase()}: membalas colekan dengan jeda acak ${minDelay}-${maxDelay}ms + istirahat anti-blokir...`);
     } else {
-      addLog(`Tombol Colek Balik terdeteksi (${availableButtons.length} tombol)! Langsung membalas...`);
+      addLog(`Tombol Colek Balik terdeteksi (${availableButtons.length} tombol)! Membalas dengan ritme manusiawi...`);
     }
 
     let clickedCount = 0;
@@ -411,6 +474,14 @@
     let scrollAttemptsWithoutNew = 0;
 
     while (!state.cancelRequested) {
+      // Check if Facebook popped up a "going too fast / temporarily blocked" warning
+      if (state.delayMode !== 'instant' && detectFacebookRateLimitWarning()) {
+        await runCooldownTimer(
+          60,
+          'Terdeteksi peringatan batas kecepatan Facebook! Istirahat otomatis agar akun aman'
+        );
+      }
+
       const liveButtons = findPokeBackButtons();
       state.detectedCount = liveButtons.length;
 
@@ -427,7 +498,11 @@
       }
 
       scrollAttemptsWithoutNew = 0;
-      const btn = liveButtons[0];
+
+      // Occasional natural human order variation: 80% top button, 20% 2nd button if visible
+      const pickIndex =
+        liveButtons.length > 1 && state.delayMode === 'stealth' && Math.random() < 0.2 ? 1 : 0;
+      const btn = liveButtons[pickIndex];
       const friendName = extractTargetName(btn, clickedCount);
 
       try {
@@ -437,21 +512,23 @@
         }
 
         const rect = btn.getBoundingClientRect();
-        if (rect.top < 0 || rect.bottom > window.innerHeight) {
-          btn.scrollIntoView({ block: 'center', behavior: 'instant' });
-          await sleep(40);
+        if (rect.top < 40 || rect.bottom > window.innerHeight - 40) {
+          btn.scrollIntoView({
+            block: 'center',
+            behavior: state.delayMode === 'instant' ? 'instant' : 'smooth'
+          });
+          await sleep(state.delayMode === 'instant' ? 35 : randomBetween(180, 360));
         }
 
-        // Record timestamp cooldown instead of a permanent attribute so if the same friend pokes back 3 seconds later,
-        // and Facebook reuses the exact same DOM node, it will immediately be detected and poked again!
         recentClickTimestamps.set(btn, Date.now());
-        triggerHumanizedReactClick(btn);
+        await triggerHumanizedReactClick(btn);
 
         clickedCount += 1;
         state.currentBatchPoked = clickedCount;
         state.pokedSessionCount += 1;
         clickedNames.push(friendName);
         state.detectedCount = Math.max(0, liveButtons.length - 1);
+        state.status = 'LOADING';
         addLog(`(#${state.pokedSessionCount}) Mencolek balik ${friendName}`);
       } catch (err) {
         failedCount += 1;
@@ -461,14 +538,40 @@
 
       renderWidget();
 
-      if (!state.cancelRequested) {
-        const [curMin, curMax] = getDelayRange();
-        const waitMs = randomBetween(curMin, curMax);
-        await sleep(waitMs);
+      if (state.cancelRequested) break;
+
+      // Anti-Spam Batch Pacing (Prevents Facebook's ~80-100 continuous poke block!):
+      if (state.delayMode === 'stealth') {
+        if (clickedCount > 0 && clickedCount % 40 === 0 && findPokeBackButtons().length > 0) {
+          await runCooldownTimer(
+            35,
+            `Sudah ${clickedCount} colekan beruntun. Istirahat anti-limit Facebook`
+          );
+          continue;
+        } else if (clickedCount > 0 && clickedCount % 14 === 0 && findPokeBackButtons().length > 0) {
+          await runCooldownTimer(
+            randomBetween(7, 12),
+            `Jeda napas manusiawi setelah ${clickedCount} colekan`
+          );
+          continue;
+        }
+      } else if (state.delayMode === 'safe') {
+        if (clickedCount > 0 && clickedCount % 25 === 0 && findPokeBackButtons().length > 0) {
+          await runCooldownTimer(
+            randomBetween(8, 14),
+            `Jeda pengaman setelah ${clickedCount} colekan`
+          );
+          continue;
+        }
       }
+
+      const [curMin, curMax] = getDelayRange();
+      const waitMs = randomBetween(curMin, curMax);
+      await sleep(waitMs);
     }
 
     state.isProcessing = false;
+    state.isCoolingDown = false;
     state.cancelRequested = false;
 
     const remainingButtons = findPokeBackButtons();
@@ -503,17 +606,23 @@
 
   function getStatusMeta() {
     switch (state.status) {
+      case 'COOLDOWN':
+        return {
+          badgeText: `[JEDA ANTI-LIMIT ${state.cooldownRemainingSec}d]`,
+          badgeState: 'normal',
+          message: `Istirahat otomatis ${state.cooldownRemainingSec} detik agar akun tidak kena limit 100 colekan Facebook. Setelah ini lanjut mencolek otomatis...`
+        };
       case 'LOADING':
         return {
           badgeText: '[MEMPROSES]',
           badgeState: 'normal',
-          message: `Sedang membalas otomatis (Terbalas: ${state.currentBatchPoked} | Antrean layar: ${state.detectedCount})...`
+          message: `Sedang membalas otomatis dengan ritme manusiawi (Terbalas: ${state.currentBatchPoked} | Antrean layar: ${state.detectedCount})...`
         };
       case 'WATCHING':
         return {
           badgeText: '[AUTO-BALAS AKTIF]',
           badgeState: 'success',
-          message: `Siaga penuh: begitu tombol biru "Colek balik" muncul (termasuk teman yang mencolek berulang kali), langsung dibalas otomatis! Total sesi: ${state.pokedSessionCount}.`
+          message: `Siaga penuh (Anti-Limit >100): begitu tombol biru "Colek balik" muncul, langsung dibalas dengan jeda manusiawi! Total sesi: ${state.pokedSessionCount}.`
         };
       case 'DONE':
         return {
@@ -560,11 +669,11 @@
       <div class="cbf-header">
         <div class="cbf-title-group">
           <h2 class="cbf-title">Colek Balik 1-Klik</h2>
-          <p class="cbf-subtitle">Auto-Balas Setiap Tombol Muncul</p>
+          <p class="cbf-subtitle">Mode Anti-Limit &gt;100 Colekan</p>
         </div>
         <div class="cbf-header-controls">
-          <button type="button" id="cbf-speed-btn" class="cbf-icon-btn" aria-label="Ubah jeda antar klik">
-            Jeda: Aman
+          <button type="button" id="cbf-speed-btn" class="cbf-icon-btn" aria-label="Ubah mode jeda anti-limit">
+            Jeda: Anti-Limit
           </button>
           <button type="button" id="cbf-theme-btn" class="cbf-icon-btn" aria-label="Ganti tema terang atau gelap">
             Tema
@@ -605,7 +714,6 @@
     document.body.appendChild(widget);
 
     document.getElementById('cbf-poke-all-btn').addEventListener('click', () => {
-      // Clear any previous error skips on manual trigger
       document.querySelectorAll('[data-cbf-error-skipped]').forEach((el) => {
         el.removeAttribute('data-cbf-error-skipped');
       });
@@ -616,7 +724,7 @@
       state.autoWatch = !state.autoWatch;
       localStorage.setItem('cbf_auto_watch', String(state.autoWatch));
       if (state.autoWatch) {
-        addLog('Auto-Pantau DIAKTIFKAN: setiap tombol "Colek balik" yang muncul langsung dibalas otomatis.');
+        addLog('Auto-Pantau DIAKTIFKAN: setiap tombol "Colek balik" yang muncul langsung dibalas dengan ritme anti-limit.');
         const pending = findPokeBackButtons();
         if (pending.length > 0 && !state.isProcessing) {
           executeOneClickPokeAll(true);
@@ -645,12 +753,14 @@
     });
 
     document.getElementById('cbf-speed-btn').addEventListener('click', () => {
-      if (state.delayMode === 'safe') {
+      if (state.delayMode === 'stealth') {
+        state.delayMode = 'safe';
+      } else if (state.delayMode === 'safe') {
         state.delayMode = 'fast';
       } else if (state.delayMode === 'fast') {
         state.delayMode = 'instant';
       } else {
-        state.delayMode = 'safe';
+        state.delayMode = 'stealth';
       }
       localStorage.setItem('cbf_delay_mode', state.delayMode);
       const [minD, maxD] = getDelayRange();
@@ -698,8 +808,6 @@
   function renderWidget() {
     notifyNativeAndroidDock();
 
-    // When running inside our native Android APK (which provides a dedicated bottom dock),
-    // hide the floating HTML overlay so it never covers the mobile screen!
     const isNativeAndroidApp =
       Boolean(window.__CBF_NATIVE_ANDROID_DOCK__) ||
       Boolean(window.AndroidBridge && typeof window.AndroidBridge.onStateUpdated === 'function');
@@ -716,11 +824,12 @@
     const speedBtn = document.getElementById('cbf-speed-btn');
     if (speedBtn) {
       const labelMap = {
+        stealth: 'Jeda: Anti-Limit',
         safe: 'Jeda: Aman',
         fast: 'Jeda: Cepat',
         instant: 'Jeda: Instan'
       };
-      speedBtn.textContent = labelMap[state.delayMode] || 'Jeda: Aman';
+      speedBtn.textContent = labelMap[state.delayMode] || 'Jeda: Anti-Limit';
     }
 
     const autoWatchBtn = document.getElementById('cbf-autowatch-btn');
@@ -764,7 +873,9 @@
     const primaryBtn = document.getElementById('cbf-poke-all-btn');
     if (primaryBtn) {
       if (state.isProcessing) {
-        primaryBtn.textContent = `Hentikan Proses (Terbalas: ${state.currentBatchPoked})`;
+        primaryBtn.textContent = state.isCoolingDown
+          ? `Jeda Anti-Limit (${state.cooldownRemainingSec}d) - Klik untuk Batal`
+          : `Hentikan Proses (Terbalas: ${state.currentBatchPoked})`;
       } else {
         primaryBtn.textContent = `Balas Semua Colekan Sekarang (${state.detectedCount})`;
       }
@@ -810,7 +921,7 @@
       }
     },
     setDelayMode: (mode) => {
-      if (mode === 'safe' || mode === 'fast' || mode === 'instant') {
+      if (mode === 'stealth' || mode === 'safe' || mode === 'fast' || mode === 'instant') {
         state.delayMode = mode;
         localStorage.setItem('cbf_delay_mode', mode);
         renderWidget();
@@ -819,6 +930,8 @@
     getState: () => ({
       status: state.status,
       isProcessing: state.isProcessing,
+      isCoolingDown: state.isCoolingDown,
+      cooldownRemainingSec: state.cooldownRemainingSec,
       autoWatch: state.autoWatch,
       delayMode: state.delayMode,
       detectedCount: state.detectedCount,
@@ -881,7 +994,6 @@
     renderWidget();
   }
 
-  // Observe childList, characterData, and attribute changes (e.g. when a button in the same row changes from "Dicolek" back to "Colek balik").
   const observer = new MutationObserver((mutations) => {
     if (state.isProcessing) return;
     const shouldRescan = mutations.some((m) => {
@@ -894,11 +1006,10 @@
 
     if (shouldRescan) {
       clearTimeout(scanTimeout);
-      scanTimeout = setTimeout(handlePotentialNewPokes, 150);
+      scanTimeout = setTimeout(handlePotentialNewPokes, 180);
     }
   });
 
-  // High-responsiveness interval (every 800ms): immediately detects & pokes any "Colek balik" button that appears on screen.
   setInterval(() => {
     if (state.isProcessing) return;
     const pending = findPokeBackButtons();
@@ -909,13 +1020,13 @@
     if (state.autoWatch && pending.length > 0) {
       executeOneClickPokeAll(true);
     }
-  }, 800);
+  }, 900);
 
   function init() {
     buildWidgetDOM();
     const initialButtons = findPokeBackButtons();
     state.detectedCount = initialButtons.length;
-    addLog(`Panel siap. Terdeteksi ${state.detectedCount} tombol Colek Balik.`);
+    addLog(`Panel siap (Mode Anti-Limit >100). Terdeteksi ${state.detectedCount} tombol Colek Balik.`);
     observer.observe(document.body, {
       childList: true,
       subtree: true,

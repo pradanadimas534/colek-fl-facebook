@@ -5,7 +5,9 @@ import android.app.Activity;
 import android.graphics.Color;
 import android.graphics.drawable.GradientDrawable;
 import android.os.Bundle;
+import android.os.SystemClock;
 import android.util.TypedValue;
+import android.view.MotionEvent;
 import android.view.View;
 import android.webkit.CookieManager;
 import android.webkit.JavascriptInterface;
@@ -102,7 +104,7 @@ public class MainActivity extends Activity {
         speedBtn.setOnClickListener(v -> {
             if (webView != null) {
                 webView.evaluateJavascript(
-                        "if (window.CBFController) { var m = window.CBFController.getState().delayMode; var next = (m === 'safe') ? 'fast' : (m === 'fast' ? 'instant' : 'safe'); window.CBFController.setDelayMode(next); }",
+                        "if (window.CBFController) { var m = window.CBFController.getState().delayMode; var next = (m === 'stealth') ? 'safe' : (m === 'safe' ? 'fast' : (m === 'fast' ? 'instant' : 'stealth')); window.CBFController.setDelayMode(next); }",
                         null
                 );
             }
@@ -265,13 +267,49 @@ public class MainActivity extends Activity {
                     speedBtn.setText("Jeda: Cepat");
                 } else if ("instant".equals(delayMode)) {
                     speedBtn.setText("Jeda: Instan");
-                } else {
+                } else if ("safe".equals(delayMode)) {
                     speedBtn.setText("Jeda: Aman");
+                } else {
+                    speedBtn.setText("Anti-Limit");
                 }
 
                 if (latestLog != null && !latestLog.isEmpty()) {
                     logLineView.setText(latestLog);
                 }
+            });
+        }
+
+        // Dispatches a real Android hardware MotionEvent tap onto the WebView so Facebook sees isTrusted=true!
+        @JavascriptInterface
+        public void performTrustedTap(final int pixelX, final int pixelY) {
+            runOnUiThread(() -> {
+                if (webView == null) return;
+                long downTime = SystemClock.uptimeMillis();
+                long holdMs = 55L + (long) (Math.random() * 65L);
+                MotionEvent downEvent = MotionEvent.obtain(
+                        downTime,
+                        downTime,
+                        MotionEvent.ACTION_DOWN,
+                        (float) pixelX,
+                        (float) pixelY,
+                        0
+                );
+                webView.dispatchTouchEvent(downEvent);
+                downEvent.recycle();
+
+                webView.postDelayed(() -> {
+                    long upTime = SystemClock.uptimeMillis();
+                    MotionEvent upEvent = MotionEvent.obtain(
+                            downTime,
+                            upTime,
+                            MotionEvent.ACTION_UP,
+                            (float) pixelX,
+                            (float) pixelY,
+                            0
+                    );
+                    webView.dispatchTouchEvent(upEvent);
+                    upEvent.recycle();
+                }, holdMs);
             });
         }
     }
