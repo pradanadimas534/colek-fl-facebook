@@ -672,8 +672,44 @@
     return widget;
   }
 
+  function notifyNativeAndroidDock() {
+    if (
+      window.AndroidBridge &&
+      typeof window.AndroidBridge.onStateUpdated === 'function'
+    ) {
+      const meta = getStatusMeta();
+      const topLog = state.logs.length > 0 ? state.logs[0] : 'Siap memantau halaman Colekan Facebook.';
+      try {
+        window.AndroidBridge.onStateUpdated(
+          meta.badgeText,
+          state.detectedCount,
+          state.pokedSessionCount,
+          state.autoWatch,
+          state.isProcessing,
+          state.delayMode,
+          topLog
+        );
+      } catch (_e) {
+        // Ignore bridge serialization errors
+      }
+    }
+  }
+
   function renderWidget() {
+    notifyNativeAndroidDock();
+
+    // When running inside our native Android APK (which provides a dedicated bottom dock),
+    // hide the floating HTML overlay so it never covers the mobile screen!
+    const isNativeAndroidApp =
+      Boolean(window.__CBF_NATIVE_ANDROID_DOCK__) ||
+      Boolean(window.AndroidBridge && typeof window.AndroidBridge.onStateUpdated === 'function');
+
     const widget = buildWidgetDOM();
+    if (isNativeAndroidApp) {
+      widget.style.display = 'none';
+      return;
+    }
+    widget.style.display = '';
     widget.setAttribute('data-theme', state.theme);
     widget.setAttribute('data-collapsed', String(state.collapsed));
 
@@ -757,6 +793,7 @@
 
   window.CBFController = {
     scanPage: () => scanPage(true),
+    notifyNativeDock: () => notifyNativeAndroidDock(),
     pokeAll: () => {
       document.querySelectorAll('[data-cbf-error-skipped]').forEach((el) => {
         el.removeAttribute('data-cbf-error-skipped');

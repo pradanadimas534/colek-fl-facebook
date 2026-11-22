@@ -3,13 +3,10 @@ package com.colekbalik.facebook;
 import android.annotation.SuppressLint;
 import android.app.Activity;
 import android.graphics.Color;
-import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.os.Bundle;
 import android.util.TypedValue;
-import android.view.Gravity;
 import android.view.View;
-import android.view.ViewGroup;
 import android.webkit.CookieManager;
 import android.webkit.JavascriptInterface;
 import android.webkit.WebChromeClient;
@@ -18,7 +15,6 @@ import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.widget.Button;
-import android.widget.LinearLayout;
 import android.widget.TextView;
 
 import java.io.BufferedReader;
@@ -34,136 +30,94 @@ public class MainActivity extends Activity {
 
     private WebView webView;
     private TextView statusBadgeView;
-    private TextView urlSubView;
-    private Button switchModeBtn;
+    private TextView subtitleView;
+    private TextView logLineView;
+    private Button modeBtn;
+    private Button pokesNavBtn;
+    private Button pokeNowBtn;
+    private Button autoWatchBtn;
+    private Button speedBtn;
+
     private boolean isShowingSimulator = false;
 
     @SuppressLint("SetJavaScriptEnabled")
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        setContentView(R.layout.activity_main);
 
-        LinearLayout root = new LinearLayout(this);
-        root.setOrientation(LinearLayout.VERTICAL);
-        root.setBackgroundColor(Color.parseColor("#0F172A"));
+        statusBadgeView = findViewById(R.id.apk_status_badge);
+        subtitleView = findViewById(R.id.apk_subtitle_text);
+        logLineView = findViewById(R.id.apk_log_line);
+        modeBtn = findViewById(R.id.apk_mode_btn);
+        pokesNavBtn = findViewById(R.id.apk_pokes_nav_btn);
+        pokeNowBtn = findViewById(R.id.apk_poke_now_btn);
+        autoWatchBtn = findViewById(R.id.apk_autowatch_btn);
+        speedBtn = findViewById(R.id.apk_speed_btn);
+        webView = findViewById(R.id.apk_webview);
 
-        // Native Android Top Control Bar (Utilitarian-Clean, >=44dp touch targets)
-        LinearLayout topBar = new LinearLayout(this);
-        topBar.setOrientation(LinearLayout.HORIZONTAL);
-        topBar.setGravity(Gravity.CENTER_VERTICAL);
-        topBar.setBackgroundColor(Color.parseColor("#1E293B"));
-        int padH = dp(12);
-        int padV = dp(8);
-        topBar.setPadding(padH, padV, padH, padV);
+        styleRoundedView(statusBadgeView, "#064E3B", "#34D399", 4);
+        styleRoundedView(modeBtn, "#334155", "#94A3B8", 6);
+        styleRoundedView(pokesNavBtn, "#0F56B3", "#60A5FA", 6);
+        styleRoundedView(pokeNowBtn, "#0F56B3", "#60A5FA", 6);
+        styleRoundedView(autoWatchBtn, "#064E3B", "#34D399", 6);
+        styleRoundedView(speedBtn, "#334155", "#94A3B8", 6);
 
-        LinearLayout titleCol = new LinearLayout(this);
-        titleCol.setOrientation(LinearLayout.VERTICAL);
-        LinearLayout.LayoutParams titleParams = new LinearLayout.LayoutParams(
-                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f
-        );
-        titleCol.setLayoutParams(titleParams);
-
-        LinearLayout badgeRow = new LinearLayout(this);
-        badgeRow.setOrientation(LinearLayout.HORIZONTAL);
-        badgeRow.setGravity(Gravity.CENTER_VERTICAL);
-
-        statusBadgeView = new TextView(this);
-        statusBadgeView.setText("[MENUNGGU LOGIN]");
-        statusBadgeView.setTextColor(Color.parseColor("#F8FAFC"));
-        statusBadgeView.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
-        statusBadgeView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
-        statusBadgeView.setPadding(dp(6), dp(2), dp(6), dp(2));
-        GradientDrawable badgeBg = new GradientDrawable();
-        badgeBg.setColor(Color.parseColor("#0F172A"));
-        badgeBg.setCornerRadius(dp(4));
-        badgeBg.setStroke(dp(1), Color.parseColor("#94A3B8"));
-        statusBadgeView.setBackground(badgeBg);
-
-        TextView appTitle = new TextView(this);
-        appTitle.setText("  Colek Balik 1-Klik");
-        appTitle.setTextColor(Color.parseColor("#F8FAFC"));
-        appTitle.setTypeface(Typeface.DEFAULT_BOLD);
-        appTitle.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
-
-        badgeRow.addView(statusBadgeView);
-        badgeRow.addView(appTitle);
-
-        urlSubView = new TextView(this);
-        urlSubView.setText("Login Facebook -> Otomatis Deteksi & Balas Colekan");
-        urlSubView.setTextColor(Color.parseColor("#CBD5E1"));
-        urlSubView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
-
-        titleCol.addView(badgeRow);
-        titleCol.addView(urlSubView);
-
-        Button pokesBtn = createTopButton("Halaman Colekan", "#0F56B3", "#FFFFFF");
-        pokesBtn.setOnClickListener(v -> {
+        pokesNavBtn.setOnClickListener(v -> {
             isShowingSimulator = false;
-            switchModeBtn.setText("Simulator");
+            modeBtn.setText("Simulator");
             webView.loadUrl(FB_POKES_URL);
         });
 
-        switchModeBtn = createTopButton("Simulator", "#334155", "#F8FAFC");
-        LinearLayout.LayoutParams simParams = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT, dp(44)
-        );
-        simParams.setMarginStart(dp(6));
-        switchModeBtn.setLayoutParams(simParams);
-        switchModeBtn.setOnClickListener(v -> {
+        modeBtn.setOnClickListener(v -> {
             if (isShowingSimulator) {
                 isShowingSimulator = false;
-                switchModeBtn.setText("Simulator");
+                modeBtn.setText("Simulator");
                 webView.loadUrl(FB_POKES_URL);
             } else {
                 isShowingSimulator = true;
-                switchModeBtn.setText("FB Asli");
+                modeBtn.setText("FB Asli");
                 webView.loadUrl(LOCAL_SIM_URL);
             }
         });
 
-        topBar.addView(titleCol);
-        topBar.addView(pokesBtn);
-        topBar.addView(switchModeBtn);
+        pokeNowBtn.setOnClickListener(v -> {
+            if (webView != null) {
+                webView.evaluateJavascript(
+                        "if (window.CBFController) { window.CBFController.pokeAll(); }",
+                        null
+                );
+            }
+        });
 
-        View divider = new View(this);
-        divider.setLayoutParams(new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, dp(2)
-        ));
-        divider.setBackgroundColor(Color.parseColor("#60A5FA"));
+        autoWatchBtn.setOnClickListener(v -> {
+            if (webView != null) {
+                webView.evaluateJavascript(
+                        "if (window.CBFController) { var st = window.CBFController.getState(); window.CBFController.setAutoWatch(!st.autoWatch); }",
+                        null
+                );
+            }
+        });
 
-        webView = new WebView(this);
-        webView.setLayoutParams(new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, 0, 1.0f
-        ));
+        speedBtn.setOnClickListener(v -> {
+            if (webView != null) {
+                webView.evaluateJavascript(
+                        "if (window.CBFController) { var m = window.CBFController.getState().delayMode; var next = (m === 'safe') ? 'fast' : (m === 'fast' ? 'instant' : 'safe'); window.CBFController.setDelayMode(next); }",
+                        null
+                );
+            }
+        });
 
         configureWebView();
-
-        root.addView(topBar);
-        root.addView(divider);
-        root.addView(webView);
-
-        setContentView(root);
-
-        // Start directly on Facebook Pokes (if not logged in, Facebook shows its official login screen, then redirects to /pokes)
         webView.loadUrl(FB_POKES_URL);
     }
 
-    private Button createTopButton(String text, String bgHex, String fgHex) {
-        Button btn = new Button(this);
-        btn.setText(text);
-        btn.setAllCaps(false);
-        btn.setTextColor(Color.parseColor(fgHex));
-        btn.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
-        btn.setMinHeight(dp(44));
-        btn.setMinimumHeight(dp(44));
-        btn.setPadding(dp(10), dp(6), dp(10), dp(6));
-
-        GradientDrawable drawable = new GradientDrawable();
-        drawable.setColor(Color.parseColor(bgHex));
-        drawable.setCornerRadius(dp(6));
-        drawable.setStroke(dp(1), Color.parseColor("#94A3B8"));
-        btn.setBackground(drawable);
-        return btn;
+    private void styleRoundedView(View view, String bgHex, String strokeHex, int radiusDp) {
+        GradientDrawable d = new GradientDrawable();
+        d.setColor(Color.parseColor(bgHex));
+        d.setCornerRadius(dp(radiusDp));
+        d.setStroke(dp(1), Color.parseColor(strokeHex));
+        view.setBackground(d);
     }
 
     @SuppressLint("SetJavaScriptEnabled")
@@ -196,41 +150,22 @@ public class MainActivity extends Activity {
             public void onPageFinished(WebView view, String url) {
                 super.onPageFinished(view, url);
                 CookieManager.getInstance().flush();
-                updateAuthStatusBar(url);
                 injectAutoPokeEngine(view, url);
             }
         });
     }
 
-    private void updateAuthStatusBar(String url) {
-        String cookies = CookieManager.getInstance().getCookie("https://m.facebook.com");
-        boolean hasFbUserCookie = cookies != null && cookies.contains("c_user=");
+    private void injectAutoPokeEngine(WebView view, String url) {
+        if (url == null) return;
+        // Signal to content.js that we are inside the native Android APK shell so it hides the huge HTML floating modal
+        // and streams state updates directly to the native bottom dock!
+        view.evaluateJavascript("window.__CBF_NATIVE_ANDROID_DOCK__ = true;", null);
 
-        if (url != null && url.startsWith("file://")) {
-            statusBadgeView.setText("[MODE SIMULATOR]");
-            urlSubView.setText("Simulator Login & Auto-Deteksi Colekan");
+        if (url.startsWith("file://")) {
+            view.evaluateJavascript("if (window.CBFController) { window.CBFController.notifyNativeDock(); }", null);
             return;
         }
 
-        if (hasFbUserCookie) {
-            statusBadgeView.setText("[AKUN TERHUBUNG]");
-            if (url != null && !url.contains("/pokes")) {
-                urlSubView.setText("Login berhasil! Ketuk 'Halaman Colekan' untuk mulai auto-colek.");
-            } else {
-                urlSubView.setText("Memantau halaman Colekan (/pokes) secara otomatis...");
-            }
-        } else {
-            statusBadgeView.setText("[SILAKAN LOGIN]");
-            urlSubView.setText("Masuk ke akun Facebook Anda untuk mengaktifkan auto-colek");
-        }
-    }
-
-    private void injectAutoPokeEngine(WebView view, String url) {
-        if (url == null) return;
-        // Local simulator already loads content.css and content.js directly.
-        if (url.startsWith("file://")) return;
-
-        // Only inject the floating auto-poke panel once the user is on /pokes or logged in.
         String cssContent = readAssetText("content.css");
         String jsContent = readAssetText("content.js");
         if (cssContent.isEmpty() || jsContent.isEmpty()) return;
@@ -241,6 +176,7 @@ public class MainActivity extends Activity {
                 .replace("$", "\\$");
 
         String injectorScript = "(function() {" +
+                "window.__CBF_NATIVE_ANDROID_DOCK__ = true;" +
                 "if (!document.getElementById('cbf-injected-style')) {" +
                 "  var st = document.createElement('style');" +
                 "  st.id = 'cbf-injected-style';" +
@@ -288,8 +224,54 @@ public class MainActivity extends Activity {
         public void openFacebookPokes() {
             runOnUiThread(() -> {
                 isShowingSimulator = false;
-                switchModeBtn.setText("Simulator");
+                modeBtn.setText("Simulator");
                 webView.loadUrl(FB_POKES_URL);
+            });
+        }
+
+        @JavascriptInterface
+        public void onStateUpdated(
+                final String badgeText,
+                final int detectedCount,
+                final int pokedCount,
+                final boolean autoWatch,
+                final boolean isProcessing,
+                final String delayMode,
+                final String latestLog
+        ) {
+            runOnUiThread(() -> {
+                statusBadgeView.setText(badgeText);
+                subtitleView.setText("Siap: " + detectedCount + " | Terbalas: " + pokedCount);
+
+                if (isProcessing) {
+                    pokeNowBtn.setText("Hentikan (" + pokedCount + ")");
+                    styleRoundedView(pokeNowBtn, "#991B1B", "#F87171", 6);
+                } else {
+                    pokeNowBtn.setText("Balas Semua (" + detectedCount + ")");
+                    styleRoundedView(pokeNowBtn, "#0F56B3", "#60A5FA", 6);
+                }
+
+                if (autoWatch) {
+                    autoWatchBtn.setText("Auto: AKTIF");
+                    autoWatchBtn.setTextColor(Color.parseColor("#A7F3D0"));
+                    styleRoundedView(autoWatchBtn, "#064E3B", "#34D399", 6);
+                } else {
+                    autoWatchBtn.setText("Auto: MATI");
+                    autoWatchBtn.setTextColor(Color.parseColor("#CBD5E1"));
+                    styleRoundedView(autoWatchBtn, "#334155", "#94A3B8", 6);
+                }
+
+                if ("fast".equals(delayMode)) {
+                    speedBtn.setText("Jeda: Cepat");
+                } else if ("instant".equals(delayMode)) {
+                    speedBtn.setText("Jeda: Instan");
+                } else {
+                    speedBtn.setText("Jeda: Aman");
+                }
+
+                if (latestLog != null && !latestLog.isEmpty()) {
+                    logLineView.setText(latestLog);
+                }
             });
         }
     }

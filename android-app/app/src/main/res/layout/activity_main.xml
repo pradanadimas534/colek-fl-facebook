@@ -1,0 +1,190 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/apk_root_layout"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:fitsSystemWindows="true"
+    android:background="#0F172A">
+
+    <!-- Compact Top Bar: Brand Title + Status Badge + Theme Toggle -->
+    <LinearLayout
+        android:id="@+id/apk_top_bar"
+        android:layout_width="match_parent"
+        android:layout_height="56dp"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:paddingStart="12dp"
+        android:paddingEnd="12dp"
+        android:background="#1E293B">
+
+        <TextView
+            android:id="@+id/apk_status_badge"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="[AUTO-AKTIF]"
+            android:textColor="#A7F3D0"
+            android:background="#064E3B"
+            android:typeface="monospace"
+            android:textStyle="bold"
+            android:textSize="11sp"
+            android:paddingStart="6dp"
+            android:paddingEnd="6dp"
+            android:paddingTop="3dp"
+            android:paddingBottom="3dp"
+            android:singleLine="true" />
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:orientation="vertical"
+            android:layout_marginStart="8dp"
+            android:layout_marginEnd="8dp">
+
+            <TextView
+                android:id="@+id/apk_title_text"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Colek Balik 1-Klik"
+                android:textColor="#F8FAFC"
+                android:textStyle="bold"
+                android:textSize="14sp"
+                android:singleLine="true"
+                android:ellipsize="end" />
+
+            <TextView
+                android:id="@+id/apk_subtitle_text"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Siap: 0 | Terbalas: 0"
+                android:textColor="#CBD5E1"
+                android:typeface="monospace"
+                android:textSize="11sp"
+                android:singleLine="true"
+                android:ellipsize="end" />
+        </LinearLayout>
+
+        <Button
+            android:id="@+id/apk_mode_btn"
+            android:layout_width="wrap_content"
+            android:layout_height="44dp"
+            android:minWidth="74dp"
+            android:minHeight="44dp"
+            android:text="Simulator"
+            android:textAllCaps="false"
+            android:textSize="12sp"
+            android:textColor="#F8FAFC"
+            android:background="#334155"
+            android:paddingStart="10dp"
+            android:paddingEnd="10dp" />
+
+        <Button
+            android:id="@+id/apk_pokes_nav_btn"
+            android:layout_width="wrap_content"
+            android:layout_height="44dp"
+            android:minWidth="68dp"
+            android:minHeight="44dp"
+            android:layout_marginStart="6dp"
+            android:text="FB /pokes"
+            android:textAllCaps="false"
+            android:textSize="12sp"
+            android:textColor="#FFFFFF"
+            android:background="#0F56B3"
+            android:paddingStart="10dp"
+            android:paddingEnd="10dp" />
+    </LinearLayout>
+
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="2dp"
+        android:background="#60A5FA" />
+
+    <!-- Main WebView Canvas (Full clear area, no covering floating modal!) -->
+    <WebView
+        android:id="@+id/apk_webview"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1" />
+
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="2dp"
+        android:background="#475569" />
+
+    <!-- Native Bottom Action Dock (Never covers WebView content!) -->
+    <LinearLayout
+        android:id="@+id/apk_bottom_dock"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="10dp"
+        android:background="#1E293B">
+
+        <TextView
+            android:id="@+id/apk_log_line"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="[Siaga] Login ke akun Facebook untuk mulai auto-colek."
+            android:textColor="#CBD5E1"
+            android:typeface="monospace"
+            android:textSize="11sp"
+            android:singleLine="true"
+            android:ellipsize="end"
+            android:layout_marginBottom="8dp" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical">
+
+            <Button
+                android:id="@+id/apk_poke_now_btn"
+                android:layout_width="0dp"
+                android:layout_height="46dp"
+                android:layout_weight="1.3"
+                android:minHeight="46dp"
+                android:text="Balas Semua (0)"
+                android:textAllCaps="false"
+                android:textStyle="bold"
+                android:textSize="13sp"
+                android:textColor="#FFFFFF"
+                android:background="#0F56B3"
+                android:paddingStart="10dp"
+                android:paddingEnd="10dp" />
+
+            <Button
+                android:id="@+id/apk_autowatch_btn"
+                android:layout_width="0dp"
+                android:layout_height="46dp"
+                android:layout_weight="1.1"
+                android:minHeight="46dp"
+                android:layout_marginStart="6dp"
+                android:text="Auto: AKTIF"
+                android:textAllCaps="false"
+                android:textStyle="bold"
+                android:textSize="12sp"
+                android:textColor="#A7F3D0"
+                android:background="#064E3B"
+                android:paddingStart="8dp"
+                android:paddingEnd="8dp" />
+
+            <Button
+                android:id="@+id/apk_speed_btn"
+                android:layout_width="wrap_content"
+                android:layout_height="46dp"
+                android:minWidth="82dp"
+                android:minHeight="46dp"
+                android:layout_marginStart="6dp"
+                android:text="Jeda: Aman"
+                android:textAllCaps="false"
+                android:textSize="12sp"
+                android:textColor="#F8FAFC"
+                android:background="#334155"
+                android:paddingStart="8dp"
+                android:paddingEnd="8dp" />
+        </LinearLayout>
+    </LinearLayout>
+
+</LinearLayout>
