@@ -1,0 +1,5 @@
+# Build shadows (keep main root APK in repo for easy download)
+android-app/.gradle/
+android-app/build/
+android-app/app/build/
+android-app/local.properties

@@ -23,7 +23,22 @@ Dokumen ini mencatat seluruh file yang ditulis, alasan keputusan desain, hasil r
 - **Temuan 2 (Deduplikasi Elemen Nested di DOM Facebook)**: Pada DOM React Facebook, tombol `div[role="button"]` sering membungkus `span` yang juga berisi teks `"Colek Balik"`. Pada `findPokeBackButtons()` di [`content.js`](file:///c:/Program%20Codding/colek-fl-facebook/content.js#L68-L100), digunakan `el.closest('div[role="button"], a[role="button"], button')` beserta `Set` agar satu tombol tidak pernah diklik dua kali.
 - **Temuan 3 (Tanda Titik Ganda pada Pesan Error)**: Saat pengujian klik otomatis pada skenario `Error State`, pesan error yang sudah diakhiri tanda titik menghasilkan `..` (`menolak interaksi klik.. Klik Pindai Ulang`). Kode pada [`content.js`](file:///c:/Program%20Codding/colek-fl-facebook/content.js#L204-L211) telah diperbaiki dengan `.replace(/\.+$/, '')` sehingga pesan tampil rapi dengan satu tanda titik.
 
-## 3. Cara Memasang di Google Chrome
+## 3. Cara Memasang Aplikasi Android (`.APK`) di HP
+File aplikasi Android sudah di-build dan siap dipasang langsung di HP Android kamu:
+- **File APK Siap Pasang**: [`Colek-Balik-1-Klik-Facebook.apk`](file:///c:/Program%20Codding/colek-fl-facebook/Colek-Balik-1-Klik-Facebook.apk)
+- **Kode Sumber Android**: [`MainActivity.java`](file:///c:/Program%20Codding/colek-fl-facebook/android-app/app/src/main/java/com/colekbalik/facebook/MainActivity.java) & [`AndroidManifest.xml`](file:///c:/Program%20Codding/colek-fl-facebook/android-app/app/src/main/AndroidManifest.xml)
+- **Halaman Simulator Login & Deteksi Akun Mobile**: [`mobile-apk-preview.html`](file:///c:/Program%20Codding/colek-fl-facebook/mobile-apk-preview.html)
+
+### Alur Pemakaian di HP (`.APK`):
+1. Kirim atau unduh file **`Colek-Balik-1-Klik-Facebook.apk`** ke HP Android kamu lalu instal.
+2. Saat aplikasi dibuka, halaman resmi **Login Facebook (`m.facebook.com/pokes`)** langsung tampil di dalam aplikasi dengan penyimpanan sesi otomatis (`CookieManager`).
+3. Login menggunakan akun Facebook kamu:
+   - Status di bar atas aplikasi otomatis berubah dari `[SILAKAN LOGIN]` menjadi **`[AKUN TERHUBUNG]`**.
+   - Begitu halaman `/pokes` terbuka, mesin **Auto-Balas (`content.js` & `content.css`)** langsung diinjeksikan otomatis ke akun tersebut.
+   - Setiap ada tombol **"Colek balik" / "Poke Back"** di akunmu (termasuk >100 colekan atau teman yang mencolek berulang kali), sistem otomatis mendeteksi dan langsung mencolek balik!
+4. Di bar atas aplikasi juga tersedia tombol **`Simulator`** jika kamu ingin menguji simulasi login akun & deteksi colekan tanpa koneksi ke Facebook asli.
+
+## 4. Cara Memasang Ekstensi di Google Chrome (Desktop)
 1. Buka Google Chrome dan kunjungi `chrome://extensions/`.
 2. Aktifkan sakelar **Developer mode** (Mode pengembang) di pojok kanan atas.
 3. Klik tombol **Load unpacked** (Muat yang belum dikemas).

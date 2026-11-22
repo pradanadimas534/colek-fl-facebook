@@ -1,0 +1,531 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Aplikasi Android (.APK): Colek Balik 1-Klik Facebook</title>
+  <link rel="stylesheet" href="content.css">
+  <style>
+    :root {
+      --apk-bg: #FAFAFA;
+      --apk-card: #FFFFFF;
+      --apk-border: #52525B;
+      --apk-text: #111827;
+      --apk-muted: #374151;
+      --apk-accent: #0F56B3;
+      --apk-accent-hover: #0B3F86;
+      --apk-accent-text: #FFFFFF;
+      --apk-ok-bg: #DCFCE7;
+      --apk-ok-text: #166534;
+      --apk-err-bg: #FEE2E2;
+      --apk-err-text: #991B1B;
+      --apk-focus: #0F56B3;
+    }
+
+    body[data-apk-theme="dark"] {
+      --apk-bg: #0F172A;
+      --apk-card: #1E293B;
+      --apk-border: #94A3B8;
+      --apk-text: #F8FAFC;
+      --apk-muted: #CBD5E1;
+      --apk-accent: #60A5FA;
+      --apk-accent-hover: #93C5FD;
+      --apk-accent-text: #0F172A;
+      --apk-ok-bg: #064E3B;
+      --apk-ok-text: #A7F3D0;
+      --apk-err-bg: #7F1D1D;
+      --apk-err-text: #FECACA;
+      --apk-focus: #93C5FD;
+    }
+
+    *, *::before, *::after {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      padding: 0 0 210px 0;
+      background-color: var(--apk-bg);
+      color: var(--apk-text);
+      font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+      font-size: 15px;
+      line-height: 1.5;
+    }
+
+    .apk-topbar {
+      background-color: var(--apk-card);
+      border-bottom: 2px solid var(--apk-border);
+      padding: 12px 16px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+
+    .apk-brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .apk-badge-logo {
+      font-family: 'Consolas', 'SFMono-Regular', monospace;
+      font-size: 12px;
+      font-weight: 700;
+      padding: 4px 8px;
+      border-radius: 4px;
+      border: 1.5px solid var(--apk-border);
+      background-color: var(--apk-bg);
+    }
+
+    .apk-app-title {
+      margin: 0;
+      font-size: 16px;
+      font-weight: 700;
+    }
+
+    .apk-top-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .apk-btn {
+      min-height: 44px;
+      min-width: 44px;
+      padding: 8px 12px;
+      border-radius: 6px;
+      border: 1.5px solid var(--apk-border);
+      background-color: var(--apk-card);
+      color: var(--apk-text);
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      text-decoration: none;
+    }
+
+    .apk-btn:hover {
+      border-color: var(--apk-accent);
+    }
+
+    .apk-btn:focus-visible,
+    .apk-primary-btn:focus-visible,
+    .apk-input:focus-visible,
+    .fb-poke-btn:focus-visible {
+      outline: 3px solid var(--apk-focus);
+      outline-offset: 2px;
+    }
+
+    .apk-primary-btn {
+      min-height: 46px;
+      padding: 10px 16px;
+      border-radius: 6px;
+      border: 2px solid var(--apk-accent);
+      background-color: var(--apk-accent);
+      color: var(--apk-accent-text);
+      font-size: 14px;
+      font-weight: 700;
+      cursor: pointer;
+      width: 100%;
+    }
+
+    .apk-primary-btn:hover {
+      background-color: var(--apk-accent-hover);
+    }
+
+    .apk-main {
+      max-width: 540px;
+      margin: 16px auto;
+      padding: 0 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .apk-card {
+      background-color: var(--apk-card);
+      border: 1.5px solid var(--apk-border);
+      border-radius: 8px;
+      padding: 16px;
+    }
+
+    .apk-card-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      margin-bottom: 10px;
+      padding-bottom: 8px;
+      border-bottom: 1.5px solid var(--apk-border);
+    }
+
+    .apk-card-title {
+      margin: 0;
+      font-size: 16px;
+      font-weight: 700;
+    }
+
+    .apk-status-pill {
+      font-family: 'Consolas', 'SFMono-Regular', monospace;
+      font-size: 12px;
+      font-weight: 700;
+      padding: 2px 6px;
+      border-radius: 4px;
+      border: 1.5px solid var(--apk-border);
+      background-color: var(--apk-bg);
+    }
+
+    .apk-status-pill[data-logged="true"] {
+      background-color: var(--apk-ok-bg);
+      color: var(--apk-ok-text);
+      border-color: var(--apk-ok-text);
+    }
+
+    .apk-desc {
+      margin: 0 0 12px 0;
+      font-size: 13px;
+      color: var(--apk-muted);
+    }
+
+    .apk-form {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .apk-field {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .apk-label {
+      font-size: 13px;
+      font-weight: 600;
+    }
+
+    .apk-input {
+      min-height: 44px;
+      padding: 8px 12px;
+      border-radius: 6px;
+      border: 1.5px solid var(--apk-border);
+      background-color: var(--apk-bg);
+      color: var(--apk-text);
+      font-size: 14px;
+    }
+
+    .apk-btn-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      margin-top: 10px;
+    }
+
+    @media (max-width: 420px) {
+      .apk-btn-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .poke-list {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .poke-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 10px;
+      padding: 12px;
+      border-radius: 8px;
+      border: 1.5px solid var(--apk-border);
+      background-color: var(--apk-bg);
+    }
+
+    .poke-friend-meta {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .poke-friend-name {
+      margin: 0;
+      font-size: 15px;
+      font-weight: 700;
+    }
+
+    .poke-friend-sub {
+      margin: 0;
+      font-size: 12px;
+      color: var(--apk-muted);
+    }
+
+    .fb-poke-btn {
+      min-height: 44px;
+      min-width: 110px;
+      padding: 8px 14px;
+      border-radius: 6px;
+      border: 2px solid var(--apk-accent);
+      background-color: var(--apk-accent);
+      color: var(--apk-accent-text);
+      font-size: 14px;
+      font-weight: 700;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .fb-poke-btn[aria-disabled="true"] {
+      background-color: var(--apk-ok-bg);
+      color: var(--apk-ok-text);
+      border-color: var(--apk-ok-text);
+      cursor: default;
+    }
+  </style>
+</head>
+<body data-apk-theme="light">
+  <header class="apk-topbar">
+    <div class="apk-brand">
+      <span class="apk-badge-logo">[APK v1.0]</span>
+      <h1 class="apk-app-title">Colek Balik Facebook Mobile</h1>
+    </div>
+    <div class="apk-top-actions">
+      <button type="button" id="apk-open-real-fb" class="apk-btn">
+        Login Facebook Asli
+      </button>
+      <button type="button" id="apk-theme-toggle" class="apk-btn">
+        Tema: Terang
+      </button>
+    </div>
+  </header>
+
+  <main class="apk-main">
+    <!-- Step 1: Login Session Card -->
+    <section id="apk-login-card" class="apk-card" aria-label="Sistem Login Akun Facebook">
+      <div class="apk-card-header">
+        <h2 class="apk-card-title">1. Sistem Login Akun</h2>
+        <span id="apk-auth-badge" class="apk-status-pill" data-logged="false">[BELUM LOGIN]</span>
+      </div>
+      <p id="apk-auth-desc" class="apk-desc">
+        Masuk dengan akun kamu untuk mendeteksi dan membalas semua colekan secara otomatis. Di dalam aplikasi Android (.APK), klik "Login Facebook Asli" di atas untuk membuka `m.facebook.com/pokes` langsung, atau gunakan Simulasi Login di bawah untuk mengetes alur deteksi.
+      </p>
+
+      <form id="apk-login-form" class="apk-form">
+        <div class="apk-field">
+          <label for="apk-account-input" class="apk-label">Email atau Nama Akun Facebook</label>
+          <input
+            type="text"
+            id="apk-account-input"
+            class="apk-input"
+            placeholder="Ketik akun (misal: dimas.pradana@facebook.com)"
+            required
+          />
+        </div>
+        <button type="submit" id="apk-login-submit-btn" class="apk-primary-btn">
+          Masuk &amp; Deteksi Colekan Akun Ini
+        </button>
+      </form>
+
+      <div id="apk-logged-controls" style="display: none;">
+        <div class="apk-btn-grid">
+          <button type="button" id="apk-simulate-incoming-btn" class="apk-btn">
+            + Simulasi Colekan Baru Masuk
+          </button>
+          <button type="button" id="apk-logout-btn" class="apk-btn">
+            Keluar Akun (Logout)
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Step 2: Account Poke Detection Feed -->
+    <section id="apk-pokes-section" class="apk-card" aria-label="Daftar Colekan Terdeteksi di Akun">
+      <div class="apk-card-header">
+        <h2 class="apk-card-title">2. Colekan Terdeteksi di Akun</h2>
+        <span id="apk-feed-count-badge" class="apk-status-pill">[0 COLEKAN]</span>
+      </div>
+      <p id="apk-feed-status-text" class="apk-desc">
+        Silakan login terlebih dahulu di kartu atas agar sistem memindai colekan masuk pada akunmu.
+      </p>
+      <div id="apk-pokes-container" class="poke-list"></div>
+    </section>
+  </main>
+
+  <script>
+    (function () {
+      const ACCOUNT_POKES_TEMPLATE = [
+        { id: 'p1', name: 'Neko Dayo', streak: 'Mencolek Anda 45 kali berturut-turut!', label: 'Colek balik' },
+        { id: 'p2', name: 'Cheyra Cengeng', streak: 'Mencolek Anda 4 kali berturut-turut!', label: 'Colek balik' },
+        { id: 'p3', name: 'Akito Kaname', streak: 'Mencolek Anda 8 kali berturut-turut!', label: 'Colek balik' },
+        { id: 'p4', name: 'Ryoo Nak Meletup', streak: 'Mencolek Anda 5 kali berturut-turut!', label: 'Colek balik' }
+      ];
+
+      let loggedAccount = null;
+      let pokes = [];
+
+      const authBadge = document.getElementById('apk-auth-badge');
+      const authDesc = document.getElementById('apk-auth-desc');
+      const loginForm = document.getElementById('apk-login-form');
+      const loggedControls = document.getElementById('apk-logged-controls');
+      const feedCountBadge = document.getElementById('apk-feed-count-badge');
+      const feedStatusText = document.getElementById('apk-feed-status-text');
+      const pokesContainer = document.getElementById('apk-pokes-container');
+
+      function escapeHtml(str) {
+        return String(str)
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;');
+      }
+
+      function renderAccountFeed() {
+        if (!loggedAccount) {
+          authBadge.textContent = '[BELUM LOGIN]';
+          authBadge.setAttribute('data-logged', 'false');
+          loginForm.style.display = 'flex';
+          loggedControls.style.display = 'none';
+          feedCountBadge.textContent = '[MENUNGGU LOGIN]';
+          feedStatusText.textContent = 'Belum ada akun yang aktif. Masuk di atas untuk mulai mendeteksi colekan.';
+          pokesContainer.innerHTML = '';
+          return;
+        }
+
+        authBadge.textContent = '[TERHUBUNG]';
+        authBadge.setAttribute('data-logged', 'true');
+        authDesc.textContent = `Sesi aktif untuk akun: ${loggedAccount}. Sistem otomatis memantau dan membalas setiap colekan yang masuk ke akun ini.`;
+        loginForm.style.display = 'none';
+        loggedControls.style.display = 'block';
+
+        const activeUnpoked = pokes.filter((p) => !p.poked).length;
+        feedCountBadge.textContent = `[${activeUnpoked} SIAP DIBALAS]`;
+        feedStatusText.textContent =
+          activeUnpoked > 0
+            ? `Ditemukan ${activeUnpoked} colekan baru di akun ${loggedAccount}. Auto-Balas sedang memproses...`
+            : `Semua colekan di akun ${loggedAccount} sudah dibalas! Sistem tetap siaga memantau colekan baru.`;
+
+        pokesContainer.innerHTML = pokes
+          .map((item) => {
+            const btnText = item.poked ? 'Dicolek' : item.label;
+            const ariaText = item.poked ? `Sudah mencolek ${item.name}` : `${item.label} ${item.name}`;
+            return `
+              <article class="poke-row" data-poke-row="${item.id}">
+                <div class="poke-friend-meta">
+                  <h3 class="poke-friend-name" data-friend-name>${escapeHtml(item.name)}</h3>
+                  <p class="poke-friend-sub">${escapeHtml(item.poked ? 'Colekan sudah dibalas otomatis' : item.streak)}</p>
+                </div>
+                <div
+                  role="button"
+                  tabindex="0"
+                  class="fb-poke-btn"
+                  data-poke-id="${item.id}"
+                  data-poke-target="${escapeHtml(item.name)}"
+                  ${item.poked ? 'aria-disabled="true"' : ''}
+                  aria-label="${escapeHtml(ariaText)}"
+                >${escapeHtml(btnText)}</div>
+              </article>
+            `;
+          })
+          .join('');
+
+        pokesContainer.querySelectorAll('.fb-poke-btn').forEach((btn) => {
+          btn.addEventListener('click', () => {
+            const pid = btn.getAttribute('data-poke-id');
+            const target = pokes.find((p) => p.id === pid);
+            if (!target || target.poked) return;
+            target.poked = true;
+            btn.setAttribute('aria-disabled', 'true');
+            btn.setAttribute('aria-label', `Sudah mencolek ${target.name}`);
+            btn.textContent = 'Dicolek';
+            const row = btn.closest('.poke-row');
+            if (row) {
+              const sub = row.querySelector('.poke-friend-sub');
+              if (sub) sub.textContent = 'Colekan sudah dibalas otomatis';
+            }
+            const remaining = pokes.filter((p) => !p.poked).length;
+            feedCountBadge.textContent = `[${remaining} SIAP DIBALAS]`;
+            if (remaining === 0) {
+              feedStatusText.textContent = `Semua colekan di akun ${loggedAccount} sudah dibalas! Sistem tetap siaga memantau colekan baru.`;
+            }
+          });
+        });
+      }
+
+      loginForm.addEventListener('submit', (e) => {
+        e.preventDefault();
+        const input = document.getElementById('apk-account-input');
+        const val = input.value.trim();
+        if (!val) return;
+        loggedAccount = val;
+        pokes = ACCOUNT_POKES_TEMPLATE.map((item) => ({ ...item, poked: false }));
+        renderAccountFeed();
+        if (window.CBFController) {
+          window.CBFController.scanPage();
+        }
+      });
+
+      document.getElementById('apk-simulate-incoming-btn').addEventListener('click', () => {
+        if (!loggedAccount) return;
+        // Simulate either an existing friend poking back again in the same row, or a new poke
+        const firstPoked = pokes.find((p) => p.poked);
+        if (firstPoked) {
+          firstPoked.poked = false;
+          firstPoked.streak = 'Baru saja mencolek Anda balik!';
+        } else {
+          pokes.unshift({
+            id: `p-${Date.now()}`,
+            name: `Teman Akun #${pokes.length + 1}`,
+            streak: 'Baru saja mencolek Anda!',
+            label: 'Colek balik',
+            poked: false
+          });
+        }
+        renderAccountFeed();
+        if (window.CBFController) {
+          window.CBFController.scanPage();
+        }
+      });
+
+      document.getElementById('apk-logout-btn').addEventListener('click', () => {
+        loggedAccount = null;
+        pokes = [];
+        document.getElementById('apk-account-input').value = '';
+        renderAccountFeed();
+        if (window.CBFController) {
+          window.CBFController.scanPage();
+        }
+      });
+
+      document.getElementById('apk-open-real-fb').addEventListener('click', () => {
+        if (window.AndroidBridge && typeof window.AndroidBridge.openFacebookPokes === 'function') {
+          window.AndroidBridge.openFacebookPokes();
+        } else {
+          window.location.href = 'https://m.facebook.com/pokes';
+        }
+      });
+
+      document.getElementById('apk-theme-toggle').addEventListener('click', () => {
+        const cur = document.body.getAttribute('data-apk-theme') || 'light';
+        const next = cur === 'light' ? 'dark' : 'light';
+        document.body.setAttribute('data-apk-theme', next);
+        document.getElementById('apk-theme-toggle').textContent = `Tema: ${next === 'light' ? 'Terang' : 'Gelap'}`;
+        if (window.CBFController) {
+          window.CBFController.setTheme(next);
+        }
+      });
+
+      renderAccountFeed();
+    })();
+  </script>
+  <script src="content.js"></script>
+</body>
+</html>
