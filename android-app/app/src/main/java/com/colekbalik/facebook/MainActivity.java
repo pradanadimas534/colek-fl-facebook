@@ -34,6 +34,7 @@ public class MainActivity extends Activity {
     private TextView statusBadgeView;
     private TextView subtitleView;
     private TextView logLineView;
+    private Button findFriendsBtn;
     private Button modeBtn;
     private Button pokesNavBtn;
     private Button pokeNowBtn;
@@ -52,6 +53,7 @@ public class MainActivity extends Activity {
         statusBadgeView = findViewById(R.id.apk_status_badge);
         subtitleView = findViewById(R.id.apk_subtitle_text);
         logLineView = findViewById(R.id.apk_log_line);
+        findFriendsBtn = findViewById(R.id.apk_find_friends_btn);
         modeBtn = findViewById(R.id.apk_mode_btn);
         pokesNavBtn = findViewById(R.id.apk_pokes_nav_btn);
         pokeNowBtn = findViewById(R.id.apk_poke_now_btn);
@@ -61,12 +63,22 @@ public class MainActivity extends Activity {
         webView = findViewById(R.id.apk_webview);
 
         styleRoundedView(statusBadgeView, "#064E3B", "#34D399", 4);
+        styleRoundedView(findFriendsBtn, "#0F56B3", "#60A5FA", 6);
         styleRoundedView(modeBtn, "#334155", "#94A3B8", 6);
         styleRoundedView(pokesNavBtn, "#0F56B3", "#60A5FA", 6);
         styleRoundedView(pokeNowBtn, "#0F56B3", "#60A5FA", 6);
         styleRoundedView(autoWatchBtn, "#064E3B", "#34D399", 6);
         styleRoundedView(autoRefreshBtn, "#064E3B", "#34D399", 6);
         styleRoundedView(speedBtn, "#334155", "#94A3B8", 6);
+
+        findFriendsBtn.setOnClickListener(v -> {
+            if (webView != null) {
+                webView.evaluateJavascript(
+                        "if (window.CBFController) { window.CBFController.findAndPokeMoreFriends(); }",
+                        null
+                );
+            }
+        });
 
         pokesNavBtn.setOnClickListener(v -> {
             if (isShowingSimulator) {
@@ -271,17 +283,20 @@ public class MainActivity extends Activity {
                 final String delayMode,
                 final String latestLog,
                 final int autoRefreshSec,
-                final int refreshCountdownSec
+                final int refreshCountdownSec,
+                final boolean includeSuggested,
+                final int pokeBackCount,
+                final int newPokeCount
         ) {
             runOnUiThread(() -> {
                 statusBadgeView.setText(badgeText);
-                subtitleView.setText("Siap: " + detectedCount + " | Terbalas: " + pokedCount);
+                subtitleView.setText("Siap:" + detectedCount + " (Balik:" + pokeBackCount + "|Baru:" + newPokeCount + ") | Total:" + pokedCount);
 
                 if (isProcessing) {
                     pokeNowBtn.setText("Stop (" + pokedCount + ")");
                     styleRoundedView(pokeNowBtn, "#991B1B", "#F87171", 6);
                 } else {
-                    pokeNowBtn.setText("Balas (" + detectedCount + ")");
+                    pokeNowBtn.setText("Colek (" + detectedCount + ")");
                     styleRoundedView(pokeNowBtn, "#0F56B3", "#60A5FA", 6);
                 }
 

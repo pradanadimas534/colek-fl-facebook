@@ -14,22 +14,22 @@
         android:layout_height="56dp"
         android:orientation="horizontal"
         android:gravity="center_vertical"
-        android:paddingStart="12dp"
-        android:paddingEnd="12dp"
+        android:paddingStart="10dp"
+        android:paddingEnd="10dp"
         android:background="#1E293B">
 
         <TextView
             android:id="@+id/apk_status_badge"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="[AUTO-AKTIF]"
+            android:text="[AUTO-COLEK]"
             android:textColor="#A7F3D0"
             android:background="#064E3B"
             android:typeface="monospace"
             android:textStyle="bold"
-            android:textSize="11sp"
-            android:paddingStart="6dp"
-            android:paddingEnd="6dp"
+            android:textSize="10sp"
+            android:paddingStart="5dp"
+            android:paddingEnd="5dp"
             android:paddingTop="3dp"
             android:paddingBottom="3dp"
             android:singleLine="true" />
@@ -39,17 +39,17 @@
             android:layout_height="wrap_content"
             android:layout_weight="1"
             android:orientation="vertical"
-            android:layout_marginStart="8dp"
-            android:layout_marginEnd="8dp">
+            android:layout_marginStart="6dp"
+            android:layout_marginEnd="6dp">
 
             <TextView
                 android:id="@+id/apk_title_text"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="Colek Balik 1-Klik"
+                android:text="Colek Balik &amp; Tambah Teman"
                 android:textColor="#F8FAFC"
                 android:textStyle="bold"
-                android:textSize="13sp"
+                android:textSize="12sp"
                 android:singleLine="true"
                 android:ellipsize="end" />
 
@@ -57,42 +57,58 @@
                 android:id="@+id/apk_subtitle_text"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="Siap: 0 | Terbalas: 0"
+                android:text="Siap: 0 (Balik:0 | Baru:0) | Tercolek: 0"
                 android:textColor="#CBD5E1"
                 android:typeface="monospace"
-                android:textSize="11sp"
+                android:textSize="10sp"
                 android:singleLine="true"
                 android:ellipsize="end" />
         </LinearLayout>
 
         <Button
+            android:id="@+id/apk_find_friends_btn"
+            android:layout_width="wrap_content"
+            android:layout_height="44dp"
+            android:minWidth="74dp"
+            android:minHeight="44dp"
+            android:text="+Teman"
+            android:textAllCaps="false"
+            android:textStyle="bold"
+            android:textSize="11sp"
+            android:textColor="#FFFFFF"
+            android:background="#0F56B3"
+            android:paddingStart="8dp"
+            android:paddingEnd="8dp" />
+
+        <Button
             android:id="@+id/apk_mode_btn"
             android:layout_width="wrap_content"
             android:layout_height="44dp"
-            android:minWidth="70dp"
+            android:minWidth="64dp"
             android:minHeight="44dp"
-            android:text="Simulator"
+            android:layout_marginStart="4dp"
+            android:text="Simulasi"
             android:textAllCaps="false"
-            android:textSize="12sp"
+            android:textSize="11sp"
             android:textColor="#F8FAFC"
             android:background="#334155"
-            android:paddingStart="8dp"
-            android:paddingEnd="8dp" />
+            android:paddingStart="6dp"
+            android:paddingEnd="6dp" />
 
         <Button
             android:id="@+id/apk_pokes_nav_btn"
             android:layout_width="wrap_content"
             android:layout_height="44dp"
-            android:minWidth="66dp"
+            android:minWidth="60dp"
             android:minHeight="44dp"
-            android:layout_marginStart="6dp"
+            android:layout_marginStart="4dp"
             android:text="Refresh"
             android:textAllCaps="false"
-            android:textSize="12sp"
+            android:textSize="11sp"
             android:textColor="#FFFFFF"
             android:background="#0F56B3"
-            android:paddingStart="8dp"
-            android:paddingEnd="8dp" />
+            android:paddingStart="6dp"
+            android:paddingEnd="6dp" />
     </LinearLayout>
 
     <View
@@ -112,7 +128,7 @@
         android:layout_height="2dp"
         android:background="#475569" />
 
-    <!-- Native Bottom Action Dock (Never covers WebView content!) -->
+    <!-- Native Bottom Action Dock -->
     <LinearLayout
         android:id="@+id/apk_bottom_dock"
         android:layout_width="match_parent"
@@ -125,7 +141,7 @@
             android:id="@+id/apk_log_line"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="[Siaga] Auto-Refresh &amp; Auto-Colek siap memantau akun."
+            android:text="[Siaga] Balas Colekan + Colek Teman Baru siap memantau akun."
             android:textColor="#CBD5E1"
             android:typeface="monospace"
             android:textSize="11sp"
@@ -145,7 +161,7 @@
                 android:layout_height="46dp"
                 android:layout_weight="1.25"
                 android:minHeight="46dp"
-                android:text="Balas (0)"
+                android:text="Colek (0)"
                 android:textAllCaps="false"
                 android:textStyle="bold"
                 android:textSize="12sp"
@@ -177,7 +193,7 @@
                 android:layout_weight="1.15"
                 android:minHeight="46dp"
                 android:layout_marginStart="5dp"
-                android:text="Refresh: 25d"
+                android:text="Ref: 25d"
                 android:textAllCaps="false"
                 android:textStyle="bold"
                 android:textSize="11sp"

@@ -338,7 +338,10 @@
       <div id="apk-logged-controls" style="display: none;">
         <div class="apk-btn-grid">
           <button type="button" id="apk-simulate-incoming-btn" class="apk-btn">
-            + Simulasi Colekan Baru Masuk
+            + Simulasi Colekan Balik Masuk
+          </button>
+          <button type="button" id="apk-load-unpoked-friends-btn" class="apk-btn">
+            + Muat Teman Belum Tercolek ("Colek")
           </button>
           <button type="button" id="apk-logout-btn" class="apk-btn">
             Keluar Akun (Logout)
@@ -366,7 +369,15 @@
         { id: 'p1', name: 'Neko Dayo', streak: 'Mencolek Anda 45 kali berturut-turut!', label: 'Colek balik' },
         { id: 'p2', name: 'Cheyra Cengeng', streak: 'Mencolek Anda 4 kali berturut-turut!', label: 'Colek balik' },
         { id: 'p3', name: 'Akito Kaname', streak: 'Mencolek Anda 8 kali berturut-turut!', label: 'Colek balik' },
-        { id: 'p4', name: 'Ryoo Nak Meletup', streak: 'Mencolek Anda 5 kali berturut-turut!', label: 'Colek balik' }
+        { id: 'p4', name: 'Ryoo Nak Meletup', streak: 'Mencolek Anda 5 kali berturut-turut!', label: 'Colek balik' },
+        { id: 's1', name: 'Budi Santoso', streak: 'Saran Colekan - Teman belum terkena colek', label: 'Colek' },
+        { id: 's2', name: 'Siti Rahma', streak: 'Saran Colekan - Teman belum terkena colek', label: 'Colek' }
+      ];
+
+      const EXTRA_UNPOKED_FRIENDS = [
+        { name: 'Rizky Pratama', streak: 'Saran Colekan - Teman belum terkena colek', label: 'Colek' },
+        { name: 'Dewi Lestari', streak: 'Saran Colekan - Teman belum terkena colek', label: 'Colek' },
+        { name: 'Fajar Nugroho', streak: 'Saran Colekan - Teman belum terkena colek', label: 'Colek' }
       ];
 
       let loggedAccount = null;
@@ -494,6 +505,26 @@
           window.CBFController.scanPage();
         }
       });
+
+      function loadMoreUnpokedFriends() {
+        if (!loggedAccount) return;
+        EXTRA_UNPOKED_FRIENDS.forEach((friend, idx) => {
+          pokes.push({
+            id: `unpoked-${Date.now()}-${idx}`,
+            name: `${friend.name} #${pokes.length + 1}`,
+            streak: friend.streak,
+            label: 'Colek',
+            poked: false
+          });
+        });
+        renderAccountFeed();
+        if (window.CBFController) {
+          window.CBFController.scanPage();
+        }
+      }
+
+      window.__CBF_LOAD_MORE_UNPOKED_FRIENDS__ = loadMoreUnpokedFriends;
+      document.getElementById('apk-load-unpoked-friends-btn').addEventListener('click', loadMoreUnpokedFriends);
 
       document.getElementById('apk-logout-btn').addEventListener('click', () => {
         loggedAccount = null;

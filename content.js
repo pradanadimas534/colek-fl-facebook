@@ -4,7 +4,7 @@
   }
   window.__CBF_POKE_TOOL_INITIALIZED__ = true;
 
-  // Match 'Colek balik' / 'Poke Back' both as exact label and as prefix in aria-label (e.g. "Colek balik Neko Dayo").
+  // 1. Incoming pokes ("Colek balik" / "Poke Back")
   const POKE_BACK_EXACT_PATTERNS = [
     /^colek balik$/i,
     /^poke back$/i,
@@ -19,22 +19,32 @@
     /^balas colek\b/i
   ];
 
-  // Match 'Lihat Lainnya' / 'See More' pagination buttons on Facebook /pokes.
+  // 2. Suggested / Unpoked friends on the /pokes page ("Colek" / "Poke", e.g. under "Sarankan Colekan" / "Suggested Pokes" or search results)
+  const NEW_POKE_EXACT_PATTERNS = [
+    /^colek$/i,
+    /^poke$/i
+  ];
+
+  const NEW_POKE_ARIA_PREFIX_PATTERNS = [
+    /^colek\s+(?!balik\b)/i,
+    /^poke\s+(?!back\b)/i
+  ];
+
+  // 3. Pagination / Infinite Scroll ("Lihat Lainnya" / "See More")
   const SEE_MORE_PATTERNS = [
     /^lihat lainnya$/i,
     /^tampilkan lainnya$/i,
     /^muat lainnya$/i,
+    /^lihat selengkapnya$/i,
     /^see more$/i,
     /^show more$/i,
     /^load more$/i
   ];
 
-  // Cooldown map per element reference so a button is not spammed while GraphQL responds,
-  // but if Facebook reuses the exact same DOM row when the friend pokes back again, it will be detected and poked again.
   const recentClickTimestamps = new WeakMap();
   const CLICK_COOLDOWN_MS = 3200;
 
-  // Auto-Refresh cycle options (in seconds): 0 = OFF, 20 = 20s, 35 = 35s, 60 = 60s
+  // Auto-Refresh cycle options (in seconds): 25s, 45s, 15s, 0 (OFF)
   const AUTO_REFRESH_OPTIONS = [25, 45, 15, 0];
 
   function loadInitialRefreshInterval() {
@@ -82,6 +92,8 @@
     collapsed: false,
     status: 'READY',
     detectedCount: 0,
+    pokeBackCount: 0,
+    newPokeCount: 0,
     pokedSessionCount: loadPersistedSessionCount(),
     isProcessing: false,
     isCoolingDown: false,
@@ -89,6 +101,8 @@
     cancelRequested: false,
     autoWatch: localStorage.getItem('cbf_auto_watch') !== 'false',
     autoScroll: localStorage.getItem('cbf_auto_scroll') !== 'false',
+    // includeSuggestedPokes = true means it pokes BOTH "Colek balik" AND friends with "Colek" ("Tambah Colekan / Suggested Pokes")!
+    includeSuggestedPokes: localStorage.getItem('cbf_include_suggested') !== 'false',
     autoRefreshSec: initialRefreshSec,
     refreshCountdownSec: initialRefreshSec,
     currentBatchPoked: 0,
@@ -101,7 +115,6 @@
     if (state.delayMode === 'fast') return [350, 650];
     if (state.delayMode === 'instant') return [35, 60];
     if (state.delayMode === 'safe') return [1100, 2200];
-    // Default 'stealth' (Anti-Limit >100): natural human reading & tapping pace
     return [1600, 3400];
   }
 
@@ -131,13 +144,13 @@
     renderWidget();
   }
 
-  function matchesPokeText(text) {
+  function matchesPokeBackText(text) {
     if (!text) return false;
     const normalized = text.replace(/\s+/g, ' ').trim();
     return POKE_BACK_EXACT_PATTERNS.some((regex) => regex.test(normalized));
   }
 
-  function matchesPokeAria(ariaText) {
+  function matchesPokeBackAria(ariaText) {
     if (!ariaText) return false;
     const normalized = ariaText.replace(/\s+/g, ' ').trim();
     return (
@@ -146,18 +159,51 @@
     );
   }
 
-  function isCurrentlyPokeBackButton(el) {
-    if (!el) return false;
+  function matchesNewPokeText(text) {
+    if (!text) return false;
+    const normalized = text.replace(/\s+/g, ' ').trim();
+    return NEW_POKE_EXACT_PATTERNS.some((regex) => regex.test(normalized));
+  }
+
+  function matchesNewPokeAria(ariaText) {
+    if (!ariaText) return false;
+    const normalized = ariaText.replace(/\s+/g, ' ').trim();
+    return (
+      NEW_POKE_EXACT_PATTERNS.some((regex) => regex.test(normalized)) ||
+      NEW_POKE_ARIA_PREFIX_PATTERNS.some((regex) => regex.test(normalized))
+    );
+  }
+
+  // Classify whether an element is a "POKE_BACK" ("Colek balik"), a "NEW_POKE" ("Colek" / Suggested friend), or null.
+  function classifyPokeButtonType(el) {
+    if (!el) return null;
     const ariaLabel = el.getAttribute('aria-label') || '';
     const textContent = el.textContent || '';
-    return matchesPokeAria(ariaLabel) || matchesPokeText(textContent);
+
+    if (matchesPokeBackAria(ariaLabel) || matchesPokeBackText(textContent)) {
+      return 'POKE_BACK';
+    }
+
+    if (state.includeSuggestedPokes) {
+      if (matchesNewPokeAria(ariaLabel) || matchesNewPokeText(textContent)) {
+        // Make sure we never match a heading or non-button container that just happens to say "Colek"
+        const role = el.getAttribute('role') || '';
+        const tag = el.tagName.toLowerCase();
+        if (role === 'button' || tag === 'button' || el.closest('[role="button"], button')) {
+          return 'NEW_POKE';
+        }
+      }
+    }
+
+    return null;
   }
 
   function isElementClickablePokeButton(el) {
     if (!el || !el.isConnected) return false;
     if (el.disabled || el.getAttribute('aria-disabled') === 'true') return false;
 
-    if (!isCurrentlyPokeBackButton(el)) {
+    const btnType = classifyPokeButtonType(el);
+    if (!btnType) {
       return false;
     }
 
@@ -190,7 +236,7 @@
     if (explicitTarget) return explicitTarget;
 
     const aria = buttonEl.getAttribute('aria-label') || '';
-    const ariaMatch = aria.match(/^(?:colek balik|poke back|membalas colekan|balas colek)\s+(.+)$/i);
+    const ariaMatch = aria.match(/^(?:colek balik|poke back|membalas colekan|balas colek|colek|poke)\s+(.+)$/i);
     if (ariaMatch && ariaMatch[1]) {
       return ariaMatch[1].trim();
     }
@@ -202,8 +248,10 @@
         const candidateName = linkOrName.textContent.replace(/\s+/g, ' ').trim();
         if (
           candidateName &&
-          !matchesPokeText(candidateName) &&
+          !matchesPokeBackText(candidateName) &&
+          !matchesNewPokeText(candidateName) &&
           !/^dicolek$/i.test(candidateName) &&
+          !/^colekan$/i.test(candidateName) &&
           candidateName.length < 80
         ) {
           return candidateName;
@@ -230,6 +278,7 @@
     return null;
   }
 
+  // Finds both "Colek balik" (incoming pokes) AND "Colek" (suggested/unpoked friends), prioritizing "Colek balik" first!
   function findPokeBackButtons() {
     const candidates = Array.from(
       document.querySelectorAll(
@@ -237,7 +286,8 @@
       )
     );
 
-    const matched = [];
+    const pokeBackList = [];
+    const newPokeList = [];
     const seen = new Set();
 
     for (const el of candidates) {
@@ -248,16 +298,28 @@
       const ariaLabel = el.getAttribute('aria-label') || '';
       const directText = el.childElementCount === 0 ? el.textContent || '' : '';
 
-      if (matchesPokeAria(ariaLabel) || matchesPokeText(directText)) {
+      const isBack = matchesPokeBackAria(ariaLabel) || matchesPokeBackText(directText);
+      const isNew =
+        !isBack &&
+        state.includeSuggestedPokes &&
+        (matchesNewPokeAria(ariaLabel) || matchesNewPokeText(directText));
+
+      if (isBack || isNew) {
         const interactiveRoot = findInteractiveButtonAncestor(el) || el;
         if (!seen.has(interactiveRoot) && isElementClickablePokeButton(interactiveRoot)) {
           seen.add(interactiveRoot);
-          matched.push(interactiveRoot);
+          if (classifyPokeButtonType(interactiveRoot) === 'POKE_BACK') {
+            pokeBackList.push(interactiveRoot);
+          } else {
+            newPokeList.push(interactiveRoot);
+          }
         }
       }
     }
 
-    return matched;
+    state.pokeBackCount = pokeBackList.length;
+    state.newPokeCount = newPokeList.length;
+    return [...pokeBackList, ...newPokeList];
   }
 
   function findSeeMoreButton() {
@@ -399,31 +461,87 @@
     state.cooldownRemainingSec = 0;
   }
 
+  // Deep Scroll & Load More Friends: scrolls down the page and clicks "Lihat Lainnya / See More"
+  // so unpoked friends further down the list ("Sarankan Colekan / Suggested Pokes") are loaded into the DOM!
   async function tryLoadMorePokesFromPage() {
     if (!state.autoScroll) return false;
 
     const seeMoreBtn = findSeeMoreButton();
     if (seeMoreBtn) {
-      addLog('Menekan tombol "Lihat Lainnya" untuk memuat daftar colekan berikutnya...');
-      seeMoreBtn.scrollIntoView({ block: 'center', behavior: 'smooth' });
-      await sleep(150);
+      addLog('Menekan "Lihat Lainnya" untuk membuka daftar teman yang belum terkena colek...');
+      seeMoreBtn.scrollIntoView({ block: 'center', behavior: state.delayMode === 'instant' ? 'instant' : 'smooth' });
+      await sleep(state.delayMode === 'instant' ? 40 : 180);
       await triggerHumanizedReactClick(seeMoreBtn);
       const waitLoad = state.delayMode === 'instant' ? 80 : 1200;
       await sleep(waitLoad);
-      return findPokeBackButtons().length > 0;
+      if (findPokeBackButtons().length > 0) return true;
+    }
+
+    // Also scroll down the page to trigger Facebook's infinite scroll lazy loader for Suggested Friends ("Sarankan Colekan")
+    const prevScrollY = window.scrollY;
+    const maxScroll = Math.max(
+      document.documentElement.scrollHeight,
+      document.body ? document.body.scrollHeight : 0
+    );
+
+    if (window.innerHeight + window.scrollY < maxScroll - 10) {
+      addLog('Menggulir halaman ke bawah untuk mencari teman lain yang belum terkena colek...');
+      window.scrollTo({
+        top: Math.min(maxScroll, window.scrollY + Math.round(window.innerHeight * 0.85)),
+        behavior: state.delayMode === 'instant' ? 'instant' : 'smooth'
+      });
+      const waitScroll = state.delayMode === 'instant' ? 80 : 1000;
+      await sleep(waitScroll);
+      if (findPokeBackButtons().length > 0 || window.scrollY > prevScrollY) {
+        return findPokeBackButtons().length > 0;
+      }
     }
 
     return false;
   }
 
-  // Trigger soft SPA refresh or full page reload to fetch newly incoming pokes that Facebook didn't push via WebSocket.
+  // Trigger search / expansion of more friends to poke
+  async function findAndPokeMoreFriendsNow() {
+    // Enable includeSuggestedPokes automatically when the user asks to add more friends to poke
+    if (!state.includeSuggestedPokes) {
+      state.includeSuggestedPokes = true;
+      localStorage.setItem('cbf_include_suggested', 'true');
+    }
+
+    addLog('Mencari tambahan teman (Saran Colekan & daftar bawah) yang belum terkena colek...');
+
+    // If simulator has a "+ Tambah Teman Belum Tercolek" hook, call it
+    if (typeof window.__CBF_LOAD_MORE_UNPOKED_FRIENDS__ === 'function') {
+      try {
+        window.__CBF_LOAD_MORE_UNPOKED_FRIENDS__();
+      } catch (_e) {
+        // Ignore
+      }
+    }
+
+    await tryLoadMorePokesFromPage();
+    const found = findPokeBackButtons();
+    state.detectedCount = found.length;
+    renderWidget();
+
+    if (found.length > 0 && !state.isProcessing) {
+      return executeOneClickPokeAll(false);
+    }
+    return {
+      ok: true,
+      status: state.status,
+      clickedCount: 0,
+      failedCount: 0,
+      remainingCount: found.length
+    };
+  }
+
   function executeAutoRefreshNow(reason = 'Memuat ulang daftar colekan secara otomatis...') {
     if (state.isProcessing || state.isCoolingDown) {
       state.refreshCountdownSec = state.autoRefreshSec || 25;
       return false;
     }
 
-    // If any poke buttons just appeared right before refresh, poke them first instead of reloading!
     const pendingNow = findPokeBackButtons();
     if (pendingNow.length > 0 && state.autoWatch) {
       state.refreshCountdownSec = state.autoRefreshSec || 25;
@@ -434,7 +552,6 @@
     addLog(reason);
     state.refreshCountdownSec = state.autoRefreshSec || 25;
 
-    // 1. In local sandbox / simulator pages, if a custom refresh hook or reset/simulate button is available, use it so tests & simulator don't lose state.
     if (typeof window.__CBF_ON_AUTO_REFRESH__ === 'function') {
       try {
         window.__CBF_ON_AUTO_REFRESH__();
@@ -451,7 +568,6 @@
       return true;
     }
 
-    // 2. Try clicking Facebook's in-page navigation link to /pokes first (faster React Router SPA refresh without full white screen)
     const fbPokesLink = document.querySelector('a[href="/pokes"], a[href="/pokes/"], a[href*="facebook.com/pokes"]');
     if (fbPokesLink && !fbPokesLink.closest('#cbf-floating-widget')) {
       try {
@@ -463,13 +579,11 @@
       }
     }
 
-    // 3. Inside Android APK WebView, use native reloadPokesPage bridge if available
     if (window.AndroidBridge && typeof window.AndroidBridge.reloadPokesPage === 'function') {
       window.AndroidBridge.reloadPokesPage();
       return true;
     }
 
-    // 4. Standard browser reload
     window.location.reload();
     return true;
   }
@@ -490,6 +604,18 @@
     return state.autoRefreshSec;
   }
 
+  function toggleIncludeSuggestedPokes() {
+    state.includeSuggestedPokes = !state.includeSuggestedPokes;
+    localStorage.setItem('cbf_include_suggested', String(state.includeSuggestedPokes));
+    if (state.includeSuggestedPokes) {
+      addLog('Mode Tambah Colekan Teman Baru ("Colek" / Saran Teman) DIAKTIFKAN.');
+    } else {
+      addLog('Mode Tambah Colekan Teman Baru DIMATIKAN (hanya membalas "Colek balik").');
+    }
+    scanPage(false);
+    return state.includeSuggestedPokes;
+  }
+
   function scanPage(logResult = false) {
     if (state.isProcessing) return findPokeBackButtons();
     try {
@@ -502,15 +628,17 @@
         if (logResult) {
           addLog(
             state.autoWatch
-              ? 'Pemindaian selesai: 0 tombol Colek Balik saat ini. Auto-Pantau & Auto-Refresh aktif.'
-              : 'Pemindaian selesai: 0 tombol Colek Balik ditemukan.'
+              ? 'Pemindaian selesai: 0 tombol Colek di layar. Tekan "Cari & Colek Teman Lain" untuk menggulir & mencari teman.'
+              : 'Pemindaian selesai: 0 tombol Colek ditemukan.'
           );
         }
       } else {
         state.status = 'READY';
         state.refreshCountdownSec = state.autoRefreshSec;
         if (logResult) {
-          addLog(`Pemindaian selesai: ${buttons.length} tombol Colek Balik siap dibalas.`);
+          addLog(
+            `Pemindaian selesai: ${state.pokeBackCount} Colek Balik + ${state.newPokeCount} Teman Belum Tercolek siap dieksekusi.`
+          );
         }
         if (state.autoWatch && !state.isProcessing) {
           executeOneClickPokeAll(true);
@@ -549,9 +677,18 @@
     state.detectedCount = availableButtons.length;
 
     if (availableButtons.length === 0) {
+      // Automatically scroll down / click See More to find unpoked friends further down the page!
+      const loadedMore = await tryLoadMorePokesFromPage();
+      if (loadedMore) {
+        availableButtons = findPokeBackButtons();
+        state.detectedCount = availableButtons.length;
+      }
+    }
+
+    if (availableButtons.length === 0) {
       state.status = state.autoWatch ? 'WATCHING' : 'EMPTY';
       if (!triggeredByWatcher) {
-        addLog('Tidak ada tombol Colek Balik yang aktif di layar saat ini.');
+        addLog('Tidak ada tombol Colek Balik maupun Saran Teman di layar saat ini.');
       }
       renderWidget();
       return {
@@ -573,9 +710,13 @@
 
     const [minDelay, maxDelay] = getDelayRange();
     if (!triggeredByWatcher) {
-      addLog(`Mode ${state.delayMode.toUpperCase()}: membalas colekan dengan jeda acak ${minDelay}-${maxDelay}ms + istirahat anti-blokir...`);
+      addLog(
+        `Mode ${state.delayMode.toUpperCase()}: mencolek ${state.pokeBackCount} Colek Balik & ${state.newPokeCount} Teman Baru...`
+      );
     } else {
-      addLog(`Tombol Colek Balik terdeteksi (${availableButtons.length} tombol)! Membalas dengan ritme manusiawi...`);
+      addLog(
+        `Terdeteksi ${state.pokeBackCount} Colek Balik + ${state.newPokeCount} Teman Belum Tercolek! Memproses otomatis...`
+      );
     }
 
     let clickedCount = 0;
@@ -595,7 +736,8 @@
       state.detectedCount = liveButtons.length;
 
       if (liveButtons.length === 0) {
-        if (state.autoScroll && scrollAttemptsWithoutNew < 1) {
+        // Keep scrolling down up to 3 times to discover more unpoked friends below the fold!
+        if (state.autoScroll && scrollAttemptsWithoutNew < 3) {
           scrollAttemptsWithoutNew += 1;
           const foundMore = await tryLoadMorePokesFromPage();
           if (foundMore) {
@@ -611,6 +753,7 @@
       const pickIndex =
         liveButtons.length > 1 && state.delayMode === 'stealth' && Math.random() < 0.2 ? 1 : 0;
       const btn = liveButtons[pickIndex];
+      const btnType = classifyPokeButtonType(btn);
       const friendName = extractTargetName(btn, clickedCount);
 
       try {
@@ -639,7 +782,8 @@
         state.detectedCount = Math.max(0, liveButtons.length - 1);
         state.status = 'LOADING';
         state.refreshCountdownSec = state.autoRefreshSec;
-        addLog(`(#${state.pokedSessionCount}) Mencolek balik ${friendName}`);
+        const actionVerb = btnType === 'NEW_POKE' ? 'Mencolek teman baru' : 'Mencolek balik';
+        addLog(`(#${state.pokedSessionCount}) ${actionVerb}: ${friendName}`);
       } catch (err) {
         failedCount += 1;
         state.lastError = err && err.message ? err.message : `Gagal mencolek ${friendName}`;
@@ -697,9 +841,9 @@
         const suffix = clickedNames.length > 3 ? ` +${clickedNames.length - 3} lainnya` : '';
         const refreshNote =
           state.autoRefreshSec > 0
-            ? ` Auto-Refresh dalam ${state.refreshCountdownSec}d jika belum ada colekan baru.`
+            ? ` Auto-Refresh & Cari Teman dalam ${state.refreshCountdownSec}d.`
             : '';
-        addLog(`Terbalas ${clickedCount} colekan (${summaryNames}${suffix}).${refreshNote}`);
+        addLog(`Terbalas/Tercolek ${clickedCount} teman (${summaryNames}${suffix}).${refreshNote}`);
       }
     } else {
       state.status = 'DONE';
@@ -730,33 +874,33 @@
         return {
           badgeText: '[MEMPROSES]',
           badgeState: 'normal',
-          message: `Sedang membalas otomatis dengan ritme manusiawi (Terbalas: ${state.currentBatchPoked} | Antrean layar: ${state.detectedCount})...`
+          message: `Sedang mencolek otomatis (Tercolek: ${state.currentBatchPoked} | Balik: ${state.pokeBackCount} | Teman Baru: ${state.newPokeCount})...`
         };
       case 'WATCHING': {
         const refreshTag =
           state.autoRefreshSec > 0
-            ? ` Auto-Refresh halaman dalam ${state.refreshCountdownSec} detik untuk memancing colekan baru muncul.`
+            ? ` Auto-Cari & Refresh dalam ${state.refreshCountdownSec}d.`
             : ' Auto-Refresh mati.';
         return {
           badgeText:
             state.autoRefreshSec > 0
-              ? `[AUTO-BALAS | REFRESH ${state.refreshCountdownSec}d]`
-              : '[AUTO-BALAS AKTIF]',
+              ? `[AUTO-COLEK | REFRESH ${state.refreshCountdownSec}d]`
+              : '[AUTO-COLEK AKTIF]',
           badgeState: 'success',
-          message: `Siaga penuh: begitu tombol "Colek balik" muncul langsung dibalas!${refreshTag} Total sesi: ${state.pokedSessionCount}.`
+          message: `Siaga penuh (Balas Colekan + Tambah Colekan Teman Baru aktif)!${refreshTag} Total sesi: ${state.pokedSessionCount}.`
         };
       }
       case 'DONE':
         return {
           badgeText: '[SELESAI]',
           badgeState: 'success',
-          message: `Semua colekan di layar sudah dibalas. Total sesi ini: ${state.pokedSessionCount} teman.`
+          message: `Semua colekan & saran teman di layar sudah dicolek. Total sesi ini: ${state.pokedSessionCount} teman.`
         };
       case 'EMPTY':
         return {
           badgeText: '[KOSONG]',
           badgeState: 'normal',
-          message: 'Belum ada tombol "Colek Balik" di layar. Aktifkan Auto-Pantau & Auto-Refresh agar otomatis memuat ulang dan membalas.'
+          message: 'Belum ada tombol "Colek Balik" atau "Colek" di layar. Tekan "Cari & Colek Teman Lain" untuk memuat daftar teman.'
         };
       case 'ERROR': {
         const cleanError = (state.lastError || 'Elemen gagal diklik').replace(/\.+$/, '');
@@ -771,7 +915,7 @@
         return {
           badgeText: '[SIAP]',
           badgeState: 'normal',
-          message: `Ditemukan ${state.detectedCount} tombol Colek Balik di layar. Tekan tombol utama atau biarkan Auto-Pantau membalas.`
+          message: `Siap mencolek: ${state.pokeBackCount} Colek Balik + ${state.newPokeCount} Teman Belum Tercolek.`
         };
     }
   }
@@ -790,8 +934,8 @@
     widget.innerHTML = `
       <div class="cbf-header">
         <div class="cbf-title-group">
-          <h2 class="cbf-title">Colek Balik 1-Klik</h2>
-          <p class="cbf-subtitle">Auto-Refresh &amp; Anti-Limit &gt;100</p>
+          <h2 class="cbf-title">Colek Balik &amp; Tambah Colekan</h2>
+          <p class="cbf-subtitle">Balas + Colek Teman Belum Tercolek</p>
         </div>
         <div class="cbf-header-controls">
           <button type="button" id="cbf-speed-btn" class="cbf-icon-btn" aria-label="Ubah mode jeda anti-limit">
@@ -808,13 +952,21 @@
       <div id="cbf-widget-body" class="cbf-body">
         <div class="cbf-status-row">
           <span id="cbf-status-badge" class="cbf-badge">[SIAP]</span>
-          <span id="cbf-counters" class="cbf-counters">Siap: 0 | Terbalas: 0</span>
+          <span id="cbf-counters" class="cbf-counters">Siap: 0 | Tercolek: 0</span>
         </div>
         <p id="cbf-state-msg" class="cbf-state-message" role="status" aria-live="polite"></p>
         <div class="cbf-actions">
           <button type="button" id="cbf-poke-all-btn" class="cbf-primary-btn">
-            Balas Semua Colekan Sekarang (0)
+            Colek Semua Sekarang (0)
           </button>
+          <div class="cbf-secondary-row">
+            <button type="button" id="cbf-find-more-friends-btn" class="cbf-secondary-btn">
+              + Cari &amp; Colek Teman Lain
+            </button>
+            <button type="button" id="cbf-suggested-toggle-btn" class="cbf-secondary-btn" aria-pressed="true">
+              Saran Teman: ON
+            </button>
+          </div>
           <div class="cbf-secondary-row">
             <button type="button" id="cbf-autowatch-btn" class="cbf-secondary-btn" aria-pressed="true">
               Auto-Pantau: AKTIF
@@ -845,12 +997,20 @@
       executeOneClickPokeAll(false);
     });
 
+    document.getElementById('cbf-find-more-friends-btn').addEventListener('click', () => {
+      findAndPokeMoreFriendsNow();
+    });
+
+    document.getElementById('cbf-suggested-toggle-btn').addEventListener('click', () => {
+      toggleIncludeSuggestedPokes();
+    });
+
     document.getElementById('cbf-autowatch-btn').addEventListener('click', () => {
       state.autoWatch = !state.autoWatch;
       localStorage.setItem('cbf_auto_watch', String(state.autoWatch));
       if (state.autoWatch) {
         state.refreshCountdownSec = state.autoRefreshSec;
-        addLog('Auto-Pantau DIAKTIFKAN: setiap tombol "Colek balik" yang muncul langsung dibalas otomatis.');
+        addLog('Auto-Pantau DIAKTIFKAN: otomatis membalas & mencolek teman yang belum terkena colek.');
         const pending = findPokeBackButtons();
         if (pending.length > 0 && !state.isProcessing) {
           executeOneClickPokeAll(true);
@@ -933,10 +1093,12 @@
           state.delayMode,
           topLog,
           state.autoRefreshSec,
-          state.refreshCountdownSec
+          state.refreshCountdownSec,
+          state.includeSuggestedPokes,
+          state.pokeBackCount,
+          state.newPokeCount
         );
       } catch (_e) {
-        // Fallback for older 7-arg signature if needed
         try {
           window.AndroidBridge.onStateUpdated(
             meta.badgeText,
@@ -945,7 +1107,9 @@
             state.autoWatch,
             state.isProcessing,
             state.delayMode,
-            topLog
+            topLog,
+            state.autoRefreshSec,
+            state.refreshCountdownSec
           );
         } catch (_e2) {
           // Ignore
@@ -979,6 +1143,15 @@
         instant: 'Jeda: Instan'
       };
       speedBtn.textContent = labelMap[state.delayMode] || 'Jeda: Anti-Limit';
+    }
+
+    const suggestedBtn = document.getElementById('cbf-suggested-toggle-btn');
+    if (suggestedBtn) {
+      suggestedBtn.textContent = state.includeSuggestedPokes
+        ? `Saran Teman: ON (${state.newPokeCount})`
+        : 'Saran Teman: OFF';
+      suggestedBtn.setAttribute('aria-pressed', String(state.includeSuggestedPokes));
+      suggestedBtn.setAttribute('data-active', String(state.includeSuggestedPokes));
     }
 
     const autoWatchBtn = document.getElementById('cbf-autowatch-btn');
@@ -1021,7 +1194,7 @@
 
     const countersEl = document.getElementById('cbf-counters');
     if (countersEl) {
-      countersEl.textContent = `Siap: ${state.detectedCount} | Terbalas: ${state.pokedSessionCount}`;
+      countersEl.textContent = `Siap: ${state.detectedCount} (Balik:${state.pokeBackCount} | Baru:${state.newPokeCount}) | Tercolek: ${state.pokedSessionCount}`;
     }
 
     const msgEl = document.getElementById('cbf-state-msg');
@@ -1035,9 +1208,9 @@
       if (state.isProcessing) {
         primaryBtn.textContent = state.isCoolingDown
           ? `Jeda Anti-Limit (${state.cooldownRemainingSec}d) - Klik untuk Batal`
-          : `Hentikan Proses (Terbalas: ${state.currentBatchPoked})`;
+          : `Hentikan Proses (Tercolek: ${state.currentBatchPoked})`;
       } else {
-        primaryBtn.textContent = `Balas Semua Colekan Sekarang (${state.detectedCount})`;
+        primaryBtn.textContent = `Colek Semua Sekarang (${state.detectedCount})`;
       }
       primaryBtn.disabled = false;
     }
@@ -1065,6 +1238,8 @@
   window.CBFController = {
     scanPage: () => scanPage(true),
     notifyNativeDock: () => notifyNativeAndroidDock(),
+    findAndPokeMoreFriends: () => findAndPokeMoreFriendsNow(),
+    toggleSuggestedPokes: () => toggleIncludeSuggestedPokes(),
     cycleAutoRefresh: () => cycleAutoRefreshInterval(),
     setAutoRefreshSec: (sec) => {
       const parsed = parseInt(sec, 10);
@@ -1103,6 +1278,9 @@
       isCoolingDown: state.isCoolingDown,
       cooldownRemainingSec: state.cooldownRemainingSec,
       autoWatch: state.autoWatch,
+      includeSuggestedPokes: state.includeSuggestedPokes,
+      pokeBackCount: state.pokeBackCount,
+      newPokeCount: state.newPokeCount,
       autoRefreshSec: state.autoRefreshSec,
       refreshCountdownSec: state.refreshCountdownSec,
       delayMode: state.delayMode,
@@ -1133,6 +1311,12 @@
         scanPage(true);
         sendResponse(window.CBFController.getState());
         return false;
+      }
+      if (request.action === 'CBF_FIND_MORE_FRIENDS') {
+        findAndPokeMoreFriendsNow().then((result) => {
+          sendResponse({ ...window.CBFController.getState(), result });
+        });
+        return true;
       }
       if (request.action === 'CBF_TOGGLE_AUTOWATCH') {
         window.CBFController.setAutoWatch(!state.autoWatch);
@@ -1190,7 +1374,7 @@
     }
   });
 
-  // 1-second heartbeat: checks for new poke buttons AND ticks the Auto-Refresh countdown when idle!
+  // 1-second heartbeat: checks for new poke buttons, scrolls to load unpoked friends halfway through countdown, and refreshes at 0!
   setInterval(() => {
     if (state.isProcessing || state.isCoolingDown) {
       state.refreshCountdownSec = state.autoRefreshSec;
@@ -1212,16 +1396,20 @@
       return;
     }
 
-    // No pending poke buttons right now: tick the Auto-Refresh timer if enabled!
     if (state.autoWatch && state.autoRefreshSec > 0) {
       state.status = 'WATCHING';
       state.refreshCountdownSec = Math.max(0, state.refreshCountdownSec - 1);
       renderWidget();
 
+      // Halfway before full page reload, try scrolling down / clicking See More to find more unpoked friends on the current page!
+      if (state.autoScroll && state.refreshCountdownSec === Math.floor(state.autoRefreshSec / 2)) {
+        tryLoadMorePokesFromPage();
+      }
+
       if (state.refreshCountdownSec <= 0) {
         state.refreshCountdownSec = state.autoRefreshSec;
         executeAutoRefreshNow(
-          `Auto-Refresh (${state.autoRefreshSec}d): memuat ulang halaman untuk memancing colekan baru...`
+          `Auto-Refresh (${state.autoRefreshSec}d): memuat ulang daftar untuk mencari teman lain yang belum terkena colek...`
         );
       }
     }
@@ -1233,7 +1421,9 @@
     state.detectedCount = initialButtons.length;
     const refreshStatusLabel =
       state.autoRefreshSec > 0 ? `Auto-Refresh ${state.autoRefreshSec}d` : 'Auto-Refresh MATI';
-    addLog(`Panel siap (${refreshStatusLabel}). Terdeteksi ${state.detectedCount} tombol Colek Balik.`);
+    addLog(
+      `Panel siap (${refreshStatusLabel}). Terdeteksi ${state.pokeBackCount} Colek Balik + ${state.newPokeCount} Teman Belum Tercolek.`
+    );
     observer.observe(document.body, {
       childList: true,
       subtree: true,
