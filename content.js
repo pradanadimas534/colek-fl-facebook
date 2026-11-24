@@ -34,28 +34,67 @@
   const recentClickTimestamps = new WeakMap();
   const CLICK_COOLDOWN_MS = 3200;
 
-  // Facebook's server-side Anti-Spam (Sentry) triggers a temporary block when an account sends ~80-100 poke mutations
-  // in a single continuous burst (< 2 minutes). To avoid hitting the 100-action wall:
-  // - 'stealth' (Anti-Limit >100): 1600-3400ms humanized jitter + 8-14s micro-break every 15 pokes + 45s cooldown after 45 pokes.
-  // - 'safe': 1100-2200ms humanized jitter + 6-10s micro-break every 20 pokes.
-  // - 'fast': 350-650ms sequential delay.
-  // - 'instant': 35-60ms (only for local simulator / 1-5 items).
+  // Auto-Refresh cycle options (in seconds): 0 = OFF, 20 = 20s, 35 = 35s, 60 = 60s
+  const AUTO_REFRESH_OPTIONS = [25, 45, 15, 0];
+
+  function loadInitialRefreshInterval() {
+    const saved = parseInt(localStorage.getItem('cbf_auto_refresh_sec') || '25', 10);
+    if (AUTO_REFRESH_OPTIONS.includes(saved)) return saved;
+    return 25;
+  }
+
+  function loadPersistedSessionCount() {
+    const val = parseInt(sessionStorage.getItem('cbf_session_poked_total') || '0', 10);
+    return Number.isNaN(val) ? 0 : val;
+  }
+
+  function savePersistedSessionCount(count) {
+    try {
+      sessionStorage.setItem('cbf_session_poked_total', String(count));
+    } catch (_e) {
+      // Ignore storage quota errors
+    }
+  }
+
+  function loadPersistedLogs() {
+    try {
+      const raw = sessionStorage.getItem('cbf_session_logs');
+      if (!raw) return [];
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? parsed.slice(0, 35) : [];
+    } catch (_e) {
+      return [];
+    }
+  }
+
+  function savePersistedLogs(logsArr) {
+    try {
+      sessionStorage.setItem('cbf_session_logs', JSON.stringify(logsArr.slice(0, 35)));
+    } catch (_e) {
+      // Ignore storage errors
+    }
+  }
+
+  const initialRefreshSec = loadInitialRefreshInterval();
+
   const state = {
     theme: localStorage.getItem('cbf_theme') || 'light',
     collapsed: false,
     status: 'READY',
     detectedCount: 0,
-    pokedSessionCount: 0,
+    pokedSessionCount: loadPersistedSessionCount(),
     isProcessing: false,
     isCoolingDown: false,
     cooldownRemainingSec: 0,
     cancelRequested: false,
     autoWatch: localStorage.getItem('cbf_auto_watch') !== 'false',
     autoScroll: localStorage.getItem('cbf_auto_scroll') !== 'false',
+    autoRefreshSec: initialRefreshSec,
+    refreshCountdownSec: initialRefreshSec,
     currentBatchPoked: 0,
     delayMode: localStorage.getItem('cbf_delay_mode') || 'stealth',
     lastError: null,
-    logs: []
+    logs: loadPersistedLogs()
   };
 
   function getDelayRange() {
@@ -88,6 +127,7 @@
     if (state.logs.length > 45) {
       state.logs.length = 45;
     }
+    savePersistedLogs(state.logs);
     renderWidget();
   }
 
@@ -243,7 +283,6 @@
     return null;
   }
 
-  // Detect if Facebook displayed a rate-limit / temporary block dialog on screen.
   function detectFacebookRateLimitWarning() {
     const dialogs = document.querySelectorAll('[role="dialog"], [role="alert"], [aria-live="assertive"]');
     for (const d of dialogs) {
@@ -263,17 +302,13 @@
     return false;
   }
 
-  // Prefer Native Android MotionEvent touch tap when inside the APK (produces isTrusted=true hardware events!),
-  // and use randomized human coordinates + realistic press hold duration (55-135ms) in browser.
   async function triggerHumanizedReactClick(targetEl) {
     const rect = targetEl.getBoundingClientRect();
-    // Randomize hit point within the middle 50% of the button so every click has unique (x, y) coordinates!
     const jitterX = (Math.random() - 0.5) * Math.max(6, rect.width * 0.45);
     const jitterY = (Math.random() - 0.5) * Math.max(4, rect.height * 0.45);
     const clientX = Math.round(rect.left + rect.width / 2 + jitterX);
     const clientY = Math.round(rect.top + rect.height / 2 + jitterY);
 
-    // If running inside our Android APK and native touch tap is available, use real Android MotionEvent (isTrusted = true)!
     if (
       window.AndroidBridge &&
       typeof window.AndroidBridge.performTrustedTap === 'function' &&
@@ -285,7 +320,7 @@
         await sleep(randomBetween(70, 140));
         return;
       } catch (_e) {
-        // Fallback to JS event dispatch if native tap fails
+        // Fallback to JS event dispatch
       }
     }
 
@@ -329,7 +364,6 @@
     dispatchEl.dispatchEvent(new MouseEvent('mouseover', commonInit));
     dispatchEl.dispatchEvent(new MouseEvent('mousedown', commonInit));
 
-    // Realistic human finger press hold duration (45-120ms) before releasing!
     if (state.delayMode !== 'instant') {
       await sleep(randomBetween(45, 120));
     }
@@ -382,6 +416,80 @@
     return false;
   }
 
+  // Trigger soft SPA refresh or full page reload to fetch newly incoming pokes that Facebook didn't push via WebSocket.
+  function executeAutoRefreshNow(reason = 'Memuat ulang daftar colekan secara otomatis...') {
+    if (state.isProcessing || state.isCoolingDown) {
+      state.refreshCountdownSec = state.autoRefreshSec || 25;
+      return false;
+    }
+
+    // If any poke buttons just appeared right before refresh, poke them first instead of reloading!
+    const pendingNow = findPokeBackButtons();
+    if (pendingNow.length > 0 && state.autoWatch) {
+      state.refreshCountdownSec = state.autoRefreshSec || 25;
+      executeOneClickPokeAll(true);
+      return false;
+    }
+
+    addLog(reason);
+    state.refreshCountdownSec = state.autoRefreshSec || 25;
+
+    // 1. In local sandbox / simulator pages, if a custom refresh hook or reset/simulate button is available, use it so tests & simulator don't lose state.
+    if (typeof window.__CBF_ON_AUTO_REFRESH__ === 'function') {
+      try {
+        window.__CBF_ON_AUTO_REFRESH__();
+        scanPage(false);
+        return true;
+      } catch (_e) {
+        // Fallback below
+      }
+    }
+
+    const simIncomingBtn = document.getElementById('apk-simulate-incoming-btn');
+    if (simIncomingBtn && simIncomingBtn.offsetParent !== null) {
+      simIncomingBtn.click();
+      return true;
+    }
+
+    // 2. Try clicking Facebook's in-page navigation link to /pokes first (faster React Router SPA refresh without full white screen)
+    const fbPokesLink = document.querySelector('a[href="/pokes"], a[href="/pokes/"], a[href*="facebook.com/pokes"]');
+    if (fbPokesLink && !fbPokesLink.closest('#cbf-floating-widget')) {
+      try {
+        window.scrollTo({ top: 0, behavior: 'instant' });
+        triggerHumanizedReactClick(fbPokesLink);
+        return true;
+      } catch (_e) {
+        // Fallback to native/window reload
+      }
+    }
+
+    // 3. Inside Android APK WebView, use native reloadPokesPage bridge if available
+    if (window.AndroidBridge && typeof window.AndroidBridge.reloadPokesPage === 'function') {
+      window.AndroidBridge.reloadPokesPage();
+      return true;
+    }
+
+    // 4. Standard browser reload
+    window.location.reload();
+    return true;
+  }
+
+  function cycleAutoRefreshInterval() {
+    const curIdx = AUTO_REFRESH_OPTIONS.indexOf(state.autoRefreshSec);
+    const nextIdx = (curIdx + 1) % AUTO_REFRESH_OPTIONS.length;
+    state.autoRefreshSec = AUTO_REFRESH_OPTIONS[nextIdx];
+    state.refreshCountdownSec = state.autoRefreshSec;
+    localStorage.setItem('cbf_auto_refresh_sec', String(state.autoRefreshSec));
+
+    if (state.autoRefreshSec > 0) {
+      addLog(`Auto-Refresh diatur setiap ${state.autoRefreshSec} detik saat daftar colekan kosong.`);
+    } else {
+      addLog('Auto-Refresh halaman DIMATIKAN.');
+    }
+    renderWidget();
+    return state.autoRefreshSec;
+  }
+
   function scanPage(logResult = false) {
     if (state.isProcessing) return findPokeBackButtons();
     try {
@@ -394,12 +502,13 @@
         if (logResult) {
           addLog(
             state.autoWatch
-              ? 'Pemindaian selesai: 0 tombol Colek Balik saat ini. Auto-Pantau siap membalas begitu tombol muncul.'
+              ? 'Pemindaian selesai: 0 tombol Colek Balik saat ini. Auto-Pantau & Auto-Refresh aktif.'
               : 'Pemindaian selesai: 0 tombol Colek Balik ditemukan.'
           );
         }
       } else {
         state.status = 'READY';
+        state.refreshCountdownSec = state.autoRefreshSec;
         if (logResult) {
           addLog(`Pemindaian selesai: ${buttons.length} tombol Colek Balik siap dibalas.`);
         }
@@ -459,6 +568,7 @@
     state.status = 'LOADING';
     state.lastError = null;
     state.currentBatchPoked = 0;
+    state.refreshCountdownSec = state.autoRefreshSec;
     renderWidget();
 
     const [minDelay, maxDelay] = getDelayRange();
@@ -474,7 +584,6 @@
     let scrollAttemptsWithoutNew = 0;
 
     while (!state.cancelRequested) {
-      // Check if Facebook popped up a "going too fast / temporarily blocked" warning
       if (state.delayMode !== 'instant' && detectFacebookRateLimitWarning()) {
         await runCooldownTimer(
           60,
@@ -499,7 +608,6 @@
 
       scrollAttemptsWithoutNew = 0;
 
-      // Occasional natural human order variation: 80% top button, 20% 2nd button if visible
       const pickIndex =
         liveButtons.length > 1 && state.delayMode === 'stealth' && Math.random() < 0.2 ? 1 : 0;
       const btn = liveButtons[pickIndex];
@@ -526,9 +634,11 @@
         clickedCount += 1;
         state.currentBatchPoked = clickedCount;
         state.pokedSessionCount += 1;
+        savePersistedSessionCount(state.pokedSessionCount);
         clickedNames.push(friendName);
         state.detectedCount = Math.max(0, liveButtons.length - 1);
         state.status = 'LOADING';
+        state.refreshCountdownSec = state.autoRefreshSec;
         addLog(`(#${state.pokedSessionCount}) Mencolek balik ${friendName}`);
       } catch (err) {
         failedCount += 1;
@@ -540,7 +650,6 @@
 
       if (state.cancelRequested) break;
 
-      // Anti-Spam Batch Pacing (Prevents Facebook's ~80-100 continuous poke block!):
       if (state.delayMode === 'stealth') {
         if (clickedCount > 0 && clickedCount % 40 === 0 && findPokeBackButtons().length > 0) {
           await runCooldownTimer(
@@ -573,6 +682,7 @@
     state.isProcessing = false;
     state.isCoolingDown = false;
     state.cancelRequested = false;
+    state.refreshCountdownSec = state.autoRefreshSec;
 
     const remainingButtons = findPokeBackButtons();
     state.detectedCount = remainingButtons.length;
@@ -585,7 +695,11 @@
       if (clickedCount > 0) {
         const summaryNames = clickedNames.slice(0, 3).join(', ');
         const suffix = clickedNames.length > 3 ? ` +${clickedNames.length - 3} lainnya` : '';
-        addLog(`Terbalas ${clickedCount} colekan (${summaryNames}${suffix}). Menunggu tombol Colek Balik berikutnya...`);
+        const refreshNote =
+          state.autoRefreshSec > 0
+            ? ` Auto-Refresh dalam ${state.refreshCountdownSec}d jika belum ada colekan baru.`
+            : '';
+        addLog(`Terbalas ${clickedCount} colekan (${summaryNames}${suffix}).${refreshNote}`);
       }
     } else {
       state.status = 'DONE';
@@ -618,12 +732,20 @@
           badgeState: 'normal',
           message: `Sedang membalas otomatis dengan ritme manusiawi (Terbalas: ${state.currentBatchPoked} | Antrean layar: ${state.detectedCount})...`
         };
-      case 'WATCHING':
+      case 'WATCHING': {
+        const refreshTag =
+          state.autoRefreshSec > 0
+            ? ` Auto-Refresh halaman dalam ${state.refreshCountdownSec} detik untuk memancing colekan baru muncul.`
+            : ' Auto-Refresh mati.';
         return {
-          badgeText: '[AUTO-BALAS AKTIF]',
+          badgeText:
+            state.autoRefreshSec > 0
+              ? `[AUTO-BALAS | REFRESH ${state.refreshCountdownSec}d]`
+              : '[AUTO-BALAS AKTIF]',
           badgeState: 'success',
-          message: `Siaga penuh (Anti-Limit >100): begitu tombol biru "Colek balik" muncul, langsung dibalas dengan jeda manusiawi! Total sesi: ${state.pokedSessionCount}.`
+          message: `Siaga penuh: begitu tombol "Colek balik" muncul langsung dibalas!${refreshTag} Total sesi: ${state.pokedSessionCount}.`
         };
+      }
       case 'DONE':
         return {
           badgeText: '[SELESAI]',
@@ -634,7 +756,7 @@
         return {
           badgeText: '[KOSONG]',
           badgeState: 'normal',
-          message: 'Belum ada tombol "Colek Balik" di layar. Aktifkan Auto-Pantau agar otomatis membalas saat tombol muncul.'
+          message: 'Belum ada tombol "Colek Balik" di layar. Aktifkan Auto-Pantau & Auto-Refresh agar otomatis memuat ulang dan membalas.'
         };
       case 'ERROR': {
         const cleanError = (state.lastError || 'Elemen gagal diklik').replace(/\.+$/, '');
@@ -669,7 +791,7 @@
       <div class="cbf-header">
         <div class="cbf-title-group">
           <h2 class="cbf-title">Colek Balik 1-Klik</h2>
-          <p class="cbf-subtitle">Mode Anti-Limit &gt;100 Colekan</p>
+          <p class="cbf-subtitle">Auto-Refresh &amp; Anti-Limit &gt;100</p>
         </div>
         <div class="cbf-header-controls">
           <button type="button" id="cbf-speed-btn" class="cbf-icon-btn" aria-label="Ubah mode jeda anti-limit">
@@ -695,12 +817,15 @@
           </button>
           <div class="cbf-secondary-row">
             <button type="button" id="cbf-autowatch-btn" class="cbf-secondary-btn" aria-pressed="true">
-              Auto-Pantau: AKTIF (Otomatis Colek)
+              Auto-Pantau: AKTIF
+            </button>
+            <button type="button" id="cbf-autorefresh-btn" class="cbf-secondary-btn" aria-pressed="true">
+              Auto-Refresh: 25d
             </button>
           </div>
           <div class="cbf-secondary-row">
             <button type="button" id="cbf-rescan-btn" class="cbf-secondary-btn">
-              Pindai Ulang
+              Refresh Sekarang
             </button>
             <button type="button" id="cbf-clear-log-btn" class="cbf-secondary-btn">
               Bersihkan Log
@@ -724,7 +849,8 @@
       state.autoWatch = !state.autoWatch;
       localStorage.setItem('cbf_auto_watch', String(state.autoWatch));
       if (state.autoWatch) {
-        addLog('Auto-Pantau DIAKTIFKAN: setiap tombol "Colek balik" yang muncul langsung dibalas dengan ritme anti-limit.');
+        state.refreshCountdownSec = state.autoRefreshSec;
+        addLog('Auto-Pantau DIAKTIFKAN: setiap tombol "Colek balik" yang muncul langsung dibalas otomatis.');
         const pending = findPokeBackButtons();
         if (pending.length > 0 && !state.isProcessing) {
           executeOneClickPokeAll(true);
@@ -743,12 +869,20 @@
       }
     });
 
+    document.getElementById('cbf-autorefresh-btn').addEventListener('click', () => {
+      cycleAutoRefreshInterval();
+    });
+
     document.getElementById('cbf-rescan-btn').addEventListener('click', () => {
-      scanPage(true);
+      const found = scanPage(true);
+      if (found.length === 0) {
+        executeAutoRefreshNow('Memuat ulang halaman untuk mencari colekan terbaru...');
+      }
     });
 
     document.getElementById('cbf-clear-log-btn').addEventListener('click', () => {
       state.logs = [];
+      savePersistedLogs(state.logs);
       addLog('Catatan log dibersihkan.');
     });
 
@@ -797,10 +931,25 @@
           state.autoWatch,
           state.isProcessing,
           state.delayMode,
-          topLog
+          topLog,
+          state.autoRefreshSec,
+          state.refreshCountdownSec
         );
       } catch (_e) {
-        // Ignore bridge serialization errors
+        // Fallback for older 7-arg signature if needed
+        try {
+          window.AndroidBridge.onStateUpdated(
+            meta.badgeText,
+            state.detectedCount,
+            state.pokedSessionCount,
+            state.autoWatch,
+            state.isProcessing,
+            state.delayMode,
+            topLog
+          );
+        } catch (_e2) {
+          // Ignore
+        }
       }
     }
   }
@@ -834,11 +983,22 @@
 
     const autoWatchBtn = document.getElementById('cbf-autowatch-btn');
     if (autoWatchBtn) {
-      autoWatchBtn.textContent = state.autoWatch
-        ? 'Auto-Pantau: AKTIF (Otomatis Colek)'
-        : 'Auto-Pantau: MATI';
+      autoWatchBtn.textContent = state.autoWatch ? 'Auto-Pantau: AKTIF' : 'Auto-Pantau: MATI';
       autoWatchBtn.setAttribute('aria-pressed', String(state.autoWatch));
       autoWatchBtn.setAttribute('data-active', String(state.autoWatch));
+    }
+
+    const autoRefreshBtn = document.getElementById('cbf-autorefresh-btn');
+    if (autoRefreshBtn) {
+      if (state.autoRefreshSec > 0) {
+        autoRefreshBtn.textContent = `Auto-Refresh: ${state.refreshCountdownSec}d/${state.autoRefreshSec}d`;
+        autoRefreshBtn.setAttribute('aria-pressed', 'true');
+        autoRefreshBtn.setAttribute('data-active', 'true');
+      } else {
+        autoRefreshBtn.textContent = 'Auto-Refresh: MATI';
+        autoRefreshBtn.setAttribute('aria-pressed', 'false');
+        autoRefreshBtn.setAttribute('data-active', 'false');
+      }
     }
 
     const themeBtn = document.getElementById('cbf-theme-btn');
@@ -905,6 +1065,15 @@
   window.CBFController = {
     scanPage: () => scanPage(true),
     notifyNativeDock: () => notifyNativeAndroidDock(),
+    cycleAutoRefresh: () => cycleAutoRefreshInterval(),
+    setAutoRefreshSec: (sec) => {
+      const parsed = parseInt(sec, 10);
+      state.autoRefreshSec = Number.isNaN(parsed) || parsed < 0 ? 0 : parsed;
+      state.refreshCountdownSec = state.autoRefreshSec;
+      localStorage.setItem('cbf_auto_refresh_sec', String(state.autoRefreshSec));
+      renderWidget();
+    },
+    triggerAutoRefreshNow: () => executeAutoRefreshNow('Refresh otomatis dipicu...'),
     pokeAll: () => {
       document.querySelectorAll('[data-cbf-error-skipped]').forEach((el) => {
         el.removeAttribute('data-cbf-error-skipped');
@@ -914,6 +1083,7 @@
     setAutoWatch: (enabled) => {
       state.autoWatch = Boolean(enabled);
       localStorage.setItem('cbf_auto_watch', String(state.autoWatch));
+      state.refreshCountdownSec = state.autoRefreshSec;
       if (state.autoWatch && !state.isProcessing && findPokeBackButtons().length > 0) {
         executeOneClickPokeAll(true);
       } else {
@@ -933,6 +1103,8 @@
       isCoolingDown: state.isCoolingDown,
       cooldownRemainingSec: state.cooldownRemainingSec,
       autoWatch: state.autoWatch,
+      autoRefreshSec: state.autoRefreshSec,
+      refreshCountdownSec: state.refreshCountdownSec,
       delayMode: state.delayMode,
       detectedCount: state.detectedCount,
       pokedSessionCount: state.pokedSessionCount,
@@ -967,6 +1139,11 @@
         sendResponse(window.CBFController.getState());
         return false;
       }
+      if (request.action === 'CBF_CYCLE_AUTOREFRESH') {
+        cycleAutoRefreshInterval();
+        sendResponse(window.CBFController.getState());
+        return false;
+      }
       if (request.action === 'CBF_POKE_ALL') {
         window.CBFController.pokeAll().then((result) => {
           sendResponse({ ...window.CBFController.getState(), result });
@@ -983,9 +1160,12 @@
     const buttons = findPokeBackButtons();
     state.detectedCount = buttons.length;
 
-    if (buttons.length > 0 && state.autoWatch) {
-      executeOneClickPokeAll(true);
-      return;
+    if (buttons.length > 0) {
+      state.refreshCountdownSec = state.autoRefreshSec;
+      if (state.autoWatch) {
+        executeOneClickPokeAll(true);
+        return;
+      }
     }
 
     if (state.status !== 'DONE' && state.status !== 'ERROR') {
@@ -1010,23 +1190,50 @@
     }
   });
 
+  // 1-second heartbeat: checks for new poke buttons AND ticks the Auto-Refresh countdown when idle!
   setInterval(() => {
-    if (state.isProcessing) return;
+    if (state.isProcessing || state.isCoolingDown) {
+      state.refreshCountdownSec = state.autoRefreshSec;
+      return;
+    }
+
     const pending = findPokeBackButtons();
     if (pending.length !== state.detectedCount) {
       state.detectedCount = pending.length;
+    }
+
+    if (pending.length > 0) {
+      state.refreshCountdownSec = state.autoRefreshSec;
+      if (state.autoWatch) {
+        executeOneClickPokeAll(true);
+        return;
+      }
       renderWidget();
+      return;
     }
-    if (state.autoWatch && pending.length > 0) {
-      executeOneClickPokeAll(true);
+
+    // No pending poke buttons right now: tick the Auto-Refresh timer if enabled!
+    if (state.autoWatch && state.autoRefreshSec > 0) {
+      state.status = 'WATCHING';
+      state.refreshCountdownSec = Math.max(0, state.refreshCountdownSec - 1);
+      renderWidget();
+
+      if (state.refreshCountdownSec <= 0) {
+        state.refreshCountdownSec = state.autoRefreshSec;
+        executeAutoRefreshNow(
+          `Auto-Refresh (${state.autoRefreshSec}d): memuat ulang halaman untuk memancing colekan baru...`
+        );
+      }
     }
-  }, 900);
+  }, 1000);
 
   function init() {
     buildWidgetDOM();
     const initialButtons = findPokeBackButtons();
     state.detectedCount = initialButtons.length;
-    addLog(`Panel siap (Mode Anti-Limit >100). Terdeteksi ${state.detectedCount} tombol Colek Balik.`);
+    const refreshStatusLabel =
+      state.autoRefreshSec > 0 ? `Auto-Refresh ${state.autoRefreshSec}d` : 'Auto-Refresh MATI';
+    addLog(`Panel siap (${refreshStatusLabel}). Terdeteksi ${state.detectedCount} tombol Colek Balik.`);
     observer.observe(document.body, {
       childList: true,
       subtree: true,

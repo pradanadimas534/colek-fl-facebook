@@ -38,6 +38,7 @@ public class MainActivity extends Activity {
     private Button pokesNavBtn;
     private Button pokeNowBtn;
     private Button autoWatchBtn;
+    private Button autoRefreshBtn;
     private Button speedBtn;
 
     private boolean isShowingSimulator = false;
@@ -55,6 +56,7 @@ public class MainActivity extends Activity {
         pokesNavBtn = findViewById(R.id.apk_pokes_nav_btn);
         pokeNowBtn = findViewById(R.id.apk_poke_now_btn);
         autoWatchBtn = findViewById(R.id.apk_autowatch_btn);
+        autoRefreshBtn = findViewById(R.id.apk_autorefresh_btn);
         speedBtn = findViewById(R.id.apk_speed_btn);
         webView = findViewById(R.id.apk_webview);
 
@@ -63,12 +65,18 @@ public class MainActivity extends Activity {
         styleRoundedView(pokesNavBtn, "#0F56B3", "#60A5FA", 6);
         styleRoundedView(pokeNowBtn, "#0F56B3", "#60A5FA", 6);
         styleRoundedView(autoWatchBtn, "#064E3B", "#34D399", 6);
+        styleRoundedView(autoRefreshBtn, "#064E3B", "#34D399", 6);
         styleRoundedView(speedBtn, "#334155", "#94A3B8", 6);
 
         pokesNavBtn.setOnClickListener(v -> {
-            isShowingSimulator = false;
-            modeBtn.setText("Simulator");
-            webView.loadUrl(FB_POKES_URL);
+            if (isShowingSimulator) {
+                webView.evaluateJavascript(
+                        "if (window.CBFController) { window.CBFController.triggerAutoRefreshNow(); }",
+                        null
+                );
+            } else {
+                webView.loadUrl(FB_POKES_URL);
+            }
         });
 
         modeBtn.setOnClickListener(v -> {
@@ -96,6 +104,15 @@ public class MainActivity extends Activity {
             if (webView != null) {
                 webView.evaluateJavascript(
                         "if (window.CBFController) { var st = window.CBFController.getState(); window.CBFController.setAutoWatch(!st.autoWatch); }",
+                        null
+                );
+            }
+        });
+
+        autoRefreshBtn.setOnClickListener(v -> {
+            if (webView != null) {
+                webView.evaluateJavascript(
+                        "if (window.CBFController) { window.CBFController.cycleAutoRefresh(); }",
                         null
                 );
             }
@@ -159,8 +176,6 @@ public class MainActivity extends Activity {
 
     private void injectAutoPokeEngine(WebView view, String url) {
         if (url == null) return;
-        // Signal to content.js that we are inside the native Android APK shell so it hides the huge HTML floating modal
-        // and streams state updates directly to the native bottom dock!
         view.evaluateJavascript("window.__CBF_NATIVE_ANDROID_DOCK__ = true;", null);
 
         if (url.startsWith("file://")) {
@@ -232,6 +247,21 @@ public class MainActivity extends Activity {
         }
 
         @JavascriptInterface
+        public void reloadPokesPage() {
+            runOnUiThread(() -> {
+                if (webView == null) return;
+                String currentUrl = webView.getUrl();
+                if (currentUrl != null && currentUrl.contains("/pokes")) {
+                    webView.reload();
+                } else if (!isShowingSimulator) {
+                    webView.loadUrl(FB_POKES_URL);
+                } else {
+                    webView.reload();
+                }
+            });
+        }
+
+        @JavascriptInterface
         public void onStateUpdated(
                 final String badgeText,
                 final int detectedCount,
@@ -239,36 +269,48 @@ public class MainActivity extends Activity {
                 final boolean autoWatch,
                 final boolean isProcessing,
                 final String delayMode,
-                final String latestLog
+                final String latestLog,
+                final int autoRefreshSec,
+                final int refreshCountdownSec
         ) {
             runOnUiThread(() -> {
                 statusBadgeView.setText(badgeText);
                 subtitleView.setText("Siap: " + detectedCount + " | Terbalas: " + pokedCount);
 
                 if (isProcessing) {
-                    pokeNowBtn.setText("Hentikan (" + pokedCount + ")");
+                    pokeNowBtn.setText("Stop (" + pokedCount + ")");
                     styleRoundedView(pokeNowBtn, "#991B1B", "#F87171", 6);
                 } else {
-                    pokeNowBtn.setText("Balas Semua (" + detectedCount + ")");
+                    pokeNowBtn.setText("Balas (" + detectedCount + ")");
                     styleRoundedView(pokeNowBtn, "#0F56B3", "#60A5FA", 6);
                 }
 
                 if (autoWatch) {
-                    autoWatchBtn.setText("Auto: AKTIF");
+                    autoWatchBtn.setText("Auto: ON");
                     autoWatchBtn.setTextColor(Color.parseColor("#A7F3D0"));
                     styleRoundedView(autoWatchBtn, "#064E3B", "#34D399", 6);
                 } else {
-                    autoWatchBtn.setText("Auto: MATI");
+                    autoWatchBtn.setText("Auto: OFF");
                     autoWatchBtn.setTextColor(Color.parseColor("#CBD5E1"));
                     styleRoundedView(autoWatchBtn, "#334155", "#94A3B8", 6);
                 }
 
+                if (autoRefreshSec > 0) {
+                    autoRefreshBtn.setText("Ref: " + refreshCountdownSec + "d/" + autoRefreshSec + "d");
+                    autoRefreshBtn.setTextColor(Color.parseColor("#A7F3D0"));
+                    styleRoundedView(autoRefreshBtn, "#064E3B", "#34D399", 6);
+                } else {
+                    autoRefreshBtn.setText("Ref: MATI");
+                    autoRefreshBtn.setTextColor(Color.parseColor("#CBD5E1"));
+                    styleRoundedView(autoRefreshBtn, "#334155", "#94A3B8", 6);
+                }
+
                 if ("fast".equals(delayMode)) {
-                    speedBtn.setText("Jeda: Cepat");
+                    speedBtn.setText("Cepat");
                 } else if ("instant".equals(delayMode)) {
-                    speedBtn.setText("Jeda: Instan");
+                    speedBtn.setText("Instan");
                 } else if ("safe".equals(delayMode)) {
-                    speedBtn.setText("Jeda: Aman");
+                    speedBtn.setText("Aman");
                 } else {
                     speedBtn.setText("Anti-Limit");
                 }
@@ -279,7 +321,6 @@ public class MainActivity extends Activity {
             });
         }
 
-        // Dispatches a real Android hardware MotionEvent tap onto the WebView so Facebook sees isTrusted=true!
         @JavascriptInterface
         public void performTrustedTap(final int pixelX, final int pixelY) {
             runOnUiThread(() -> {
