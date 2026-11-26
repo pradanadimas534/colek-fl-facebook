@@ -19,7 +19,7 @@
     /^balas colek\b/i
   ];
 
-  // 2. Suggested / Unpoked friends on the /pokes page ("Colek" / "Poke", e.g. under "Sarankan Colekan" / "Suggested Pokes" or search results)
+  // 2. Suggested / Unpoked friends on the /pokes page ("Colek" / "Poke")
   const NEW_POKE_EXACT_PATTERNS = [
     /^colek$/i,
     /^poke$/i
@@ -43,6 +43,10 @@
 
   const recentClickTimestamps = new WeakMap();
   const CLICK_COOLDOWN_MS = 3200;
+
+  // Track recent clicks per friend name to catch if the same friend snaps back to blue "Colek balik" within < 3.5 seconds
+  const friendLastClickTimeMap = new Map();
+  const FAST_SNAPBACK_WINDOW_MS = 3500;
 
   // Auto-Refresh cycle options (in seconds): 25s, 45s, 15s, 0 (OFF)
   const AUTO_REFRESH_OPTIONS = [25, 45, 15, 0];
@@ -97,11 +101,11 @@
     pokedSessionCount: loadPersistedSessionCount(),
     isProcessing: false,
     isCoolingDown: false,
+    isRateLimited: false,
     cooldownRemainingSec: 0,
     cancelRequested: false,
     autoWatch: localStorage.getItem('cbf_auto_watch') !== 'false',
     autoScroll: localStorage.getItem('cbf_auto_scroll') !== 'false',
-    // includeSuggestedPokes = true means it pokes BOTH "Colek balik" AND friends with "Colek" ("Tambah Colekan / Suggested Pokes")!
     includeSuggestedPokes: localStorage.getItem('cbf_include_suggested') !== 'false',
     autoRefreshSec: initialRefreshSec,
     refreshCountdownSec: initialRefreshSec,
@@ -174,7 +178,6 @@
     );
   }
 
-  // Classify whether an element is a "POKE_BACK" ("Colek balik"), a "NEW_POKE" ("Colek" / Suggested friend), or null.
   function classifyPokeButtonType(el) {
     if (!el) return null;
     const ariaLabel = el.getAttribute('aria-label') || '';
@@ -186,7 +189,6 @@
 
     if (state.includeSuggestedPokes) {
       if (matchesNewPokeAria(ariaLabel) || matchesNewPokeText(textContent)) {
-        // Make sure we never match a heading or non-button container that just happens to say "Colek"
         const role = el.getAttribute('role') || '';
         const tag = el.tagName.toLowerCase();
         if (role === 'button' || tag === 'button' || el.closest('[role="button"], button')) {
@@ -278,7 +280,77 @@
     return null;
   }
 
-  // Finds both "Colek balik" (incoming pokes) AND "Colek" (suggested/unpoked friends), prioritizing "Colek balik" first!
+  // Locate the row container for a poke button so we can verify after clicking whether Facebook reverted it back to blue!
+  function findFriendRowContainer(btnEl) {
+    if (!btnEl) return null;
+    return btnEl.closest('[data-poke-row], [role="article"], [role="listitem"], .poke-card, .poke-row, li');
+  }
+
+  // Check if a clicked button (or a newly re-rendered button inside the same friend row / for the same friend name)
+  // is STILL or REVERTED back to active blue "Colek balik" / "Colek" right after being clicked!
+  function didPokeSnapBackToBlue(clickedBtn, rowContainer, friendName) {
+    // Explicit simulation attribute for testing fast snap-back rate-limit detection
+    if (clickedBtn && clickedBtn.getAttribute('data-simulate-snapback') === 'true') {
+      return true;
+    }
+
+    // 1. If the exact same DOM button element is still connected, enabled, and still has a poke label ("Colek balik" / "Colek")
+    if (
+      clickedBtn &&
+      clickedBtn.isConnected &&
+      !clickedBtn.disabled &&
+      clickedBtn.getAttribute('aria-disabled') !== 'true' &&
+      classifyPokeButtonType(clickedBtn) !== null
+    ) {
+      return true;
+    }
+
+    // 2. If Facebook re-rendered a new button node inside the same friend row container that is still active blue "Colek balik" / "Colek"
+    if (rowContainer && rowContainer.isConnected) {
+      const candidates = rowContainer.querySelectorAll('div[role="button"], span[role="button"], a[role="button"], button, [aria-label]');
+      for (const el of candidates) {
+        const root = findInteractiveButtonAncestor(el) || el;
+        if (
+          root &&
+          !root.disabled &&
+          root.getAttribute('aria-disabled') !== 'true' &&
+          classifyPokeButtonType(root) !== null
+        ) {
+          return true;
+        }
+      }
+    }
+
+    // 3. Fallback search by friend name across the current DOM
+    if (friendName && !friendName.startsWith('Teman #')) {
+      const allActive = findPokeBackButtons();
+      for (const activeBtn of allActive) {
+        const name = extractTargetName(activeBtn, 0);
+        if (name && name.toLowerCase() === friendName.toLowerCase()) {
+          return true;
+        }
+      }
+    }
+
+    return false;
+  }
+
+  // Immediately emergency-stop all auto-poking & auto-refresh when a fast snap-back to blue is detected!
+  function triggerRateLimitEmergencyStop(friendName, detailReason) {
+    state.cancelRequested = true;
+    state.isProcessing = false;
+    state.isCoolingDown = false;
+    state.isRateLimited = true;
+    state.autoWatch = false;
+    localStorage.setItem('cbf_auto_watch', 'false');
+    state.status = 'RATE_LIMITED';
+    state.lastError =
+      detailReason ||
+      `Tombol "${friendName}" mental kembali ke biru ("Colek balik") sangat cepat! Akun terkena batasan (limit) Facebook. Auto-Colek & Auto-Refresh DIHENTIKAN OTOMATIS agar akun aman.`;
+    addLog(`[BATAS FACEBOOK TERDETEKSI] ${state.lastError}`);
+    renderWidget();
+  }
+
   function findPokeBackButtons() {
     const candidates = Array.from(
       document.querySelectorAll(
@@ -461,10 +533,8 @@
     state.cooldownRemainingSec = 0;
   }
 
-  // Deep Scroll & Load More Friends: scrolls down the page and clicks "Lihat Lainnya / See More"
-  // so unpoked friends further down the list ("Sarankan Colekan / Suggested Pokes") are loaded into the DOM!
   async function tryLoadMorePokesFromPage() {
-    if (!state.autoScroll) return false;
+    if (!state.autoScroll || state.isRateLimited) return false;
 
     const seeMoreBtn = findSeeMoreButton();
     if (seeMoreBtn) {
@@ -477,7 +547,6 @@
       if (findPokeBackButtons().length > 0) return true;
     }
 
-    // Also scroll down the page to trigger Facebook's infinite scroll lazy loader for Suggested Friends ("Sarankan Colekan")
     const prevScrollY = window.scrollY;
     const maxScroll = Math.max(
       document.documentElement.scrollHeight,
@@ -500,9 +569,8 @@
     return false;
   }
 
-  // Trigger search / expansion of more friends to poke
   async function findAndPokeMoreFriendsNow() {
-    // Enable includeSuggestedPokes automatically when the user asks to add more friends to poke
+    state.isRateLimited = false;
     if (!state.includeSuggestedPokes) {
       state.includeSuggestedPokes = true;
       localStorage.setItem('cbf_include_suggested', 'true');
@@ -510,7 +578,6 @@
 
     addLog('Mencari tambahan teman (Saran Colekan & daftar bawah) yang belum terkena colek...');
 
-    // If simulator has a "+ Tambah Teman Belum Tercolek" hook, call it
     if (typeof window.__CBF_LOAD_MORE_UNPOKED_FRIENDS__ === 'function') {
       try {
         window.__CBF_LOAD_MORE_UNPOKED_FRIENDS__();
@@ -537,7 +604,7 @@
   }
 
   function executeAutoRefreshNow(reason = 'Memuat ulang daftar colekan secara otomatis...') {
-    if (state.isProcessing || state.isCoolingDown) {
+    if (state.isProcessing || state.isCoolingDown || state.isRateLimited) {
       state.refreshCountdownSec = state.autoRefreshSec || 25;
       return false;
     }
@@ -618,6 +685,12 @@
 
   function scanPage(logResult = false) {
     if (state.isProcessing) return findPokeBackButtons();
+    if (state.isRateLimited) {
+      const buttons = findPokeBackButtons();
+      state.detectedCount = buttons.length;
+      renderWidget();
+      return buttons;
+    }
     try {
       state.lastError = null;
       const buttons = findPokeBackButtons();
@@ -656,6 +729,23 @@
   }
 
   async function executeOneClickPokeAll(triggeredByWatcher = false) {
+    // If user manually clicks the main button while rate-limited, reset the lock so they can test if the limit expired
+    if (!triggeredByWatcher && state.isRateLimited) {
+      state.isRateLimited = false;
+      state.lastError = null;
+      friendLastClickTimeMap.clear();
+    }
+
+    if (state.isRateLimited) {
+      return {
+        ok: false,
+        status: 'RATE_LIMITED',
+        clickedCount: 0,
+        failedCount: 1,
+        remainingCount: state.detectedCount
+      };
+    }
+
     if (state.isProcessing) {
       if (!triggeredByWatcher) {
         state.cancelRequested = true;
@@ -677,7 +767,6 @@
     state.detectedCount = availableButtons.length;
 
     if (availableButtons.length === 0) {
-      // Automatically scroll down / click See More to find unpoked friends further down the page!
       const loadedMore = await tryLoadMorePokesFromPage();
       if (loadedMore) {
         availableButtons = findPokeBackButtons();
@@ -725,18 +814,24 @@
     let scrollAttemptsWithoutNew = 0;
 
     while (!state.cancelRequested) {
-      if (state.delayMode !== 'instant' && detectFacebookRateLimitWarning()) {
-        await runCooldownTimer(
-          60,
-          'Terdeteksi peringatan batas kecepatan Facebook! Istirahat otomatis agar akun aman'
+      if (detectFacebookRateLimitWarning()) {
+        triggerRateLimitEmergencyStop(
+          'Dialog Peringatan Facebook',
+          'Terdeteksi pop-up peringatan batas kecepatan Facebook! Auto-Colek DIHENTIKAN OTOMATIS.'
         );
+        return {
+          ok: false,
+          status: 'RATE_LIMITED',
+          clickedCount,
+          failedCount: failedCount + 1,
+          remainingCount: findPokeBackButtons().length
+        };
       }
 
       const liveButtons = findPokeBackButtons();
       state.detectedCount = liveButtons.length;
 
       if (liveButtons.length === 0) {
-        // Keep scrolling down up to 3 times to discover more unpoked friends below the fold!
         if (state.autoScroll && scrollAttemptsWithoutNew < 3) {
           scrollAttemptsWithoutNew += 1;
           const foundMore = await tryLoadMorePokesFromPage();
@@ -755,6 +850,24 @@
       const btn = liveButtons[pickIndex];
       const btnType = classifyPokeButtonType(btn);
       const friendName = extractTargetName(btn, clickedCount);
+      const rowContainer = findFriendRowContainer(btn);
+
+      // Guard 1: Check if this exact same friend was already clicked < 3.5 seconds ago and already turned blue again!
+      const prevFriendClickTs = friendLastClickTimeMap.get(friendName) || 0;
+      const snapWindow = state.delayMode === 'instant' ? 0 : FAST_SNAPBACK_WINDOW_MS;
+      if (snapWindow > 0 && Date.now() - prevFriendClickTs < snapWindow) {
+        triggerRateLimitEmergencyStop(
+          friendName,
+          `Tombol "${friendName}" kembali jadi biru sangat cepat (<3.5 detik)! Tandanya akun terkena batasan (limit) Facebook. Auto-Colek BERHENTI OTOMATIS.`
+        );
+        return {
+          ok: false,
+          status: 'RATE_LIMITED',
+          clickedCount,
+          failedCount: failedCount + 1,
+          remainingCount: findPokeBackButtons().length
+        };
+      }
 
       try {
         if (btn.getAttribute('data-simulate-error') === 'true') {
@@ -771,8 +884,32 @@
           await sleep(state.delayMode === 'instant' ? 35 : randomBetween(180, 360));
         }
 
-        recentClickTimestamps.set(btn, Date.now());
+        const clickNowTs = Date.now();
+        recentClickTimestamps.set(btn, clickNowTs);
+        friendLastClickTimeMap.set(friendName, clickNowTs);
+
         await triggerHumanizedReactClick(btn);
+
+        // Guard 2: Post-Click Fast Snap-Back Verification!
+        // When Facebook rate-limits an account, the button optimistically flickers to "Dicolek" for ~200-700ms,
+        // and then the GraphQL error response reverts it right back to blue "Colek balik" / "Colek".
+        // We inspect the button/row after the GraphQL round-trip window to verify it truly stayed "Dicolek"!
+        const verifyWaitMs = state.delayMode === 'instant' ? 45 : 850;
+        await sleep(verifyWaitMs);
+
+        if (didPokeSnapBackToBlue(btn, rowContainer, friendName)) {
+          triggerRateLimitEmergencyStop(
+            friendName,
+            `Tombol "${friendName}" mental kembali ke biru ("Colek balik") dengan sangat cepat! Tandanya akun terkena batasan (limit) Facebook. Auto-Colek BERHENTI OTOMATIS.`
+          );
+          return {
+            ok: false,
+            status: 'RATE_LIMITED',
+            clickedCount,
+            failedCount: failedCount + 1,
+            remainingCount: findPokeBackButtons().length
+          };
+        }
 
         clickedCount += 1;
         state.currentBatchPoked = clickedCount;
@@ -792,7 +929,7 @@
 
       renderWidget();
 
-      if (state.cancelRequested) break;
+      if (state.cancelRequested || state.isRateLimited) break;
 
       if (state.delayMode === 'stealth') {
         if (clickedCount > 0 && clickedCount % 40 === 0 && findPokeBackButtons().length > 0) {
@@ -819,14 +956,26 @@
       }
 
       const [curMin, curMax] = getDelayRange();
-      const waitMs = randomBetween(curMin, curMax);
-      await sleep(waitMs);
+      // Subtract verifyWaitMs so total pacing remains smooth
+      const remainingDelay = Math.max(20, randomBetween(curMin, curMax) - (state.delayMode === 'instant' ? 0 : 850));
+      await sleep(remainingDelay);
     }
 
     state.isProcessing = false;
     state.isCoolingDown = false;
     state.cancelRequested = false;
     state.refreshCountdownSec = state.autoRefreshSec;
+
+    if (state.isRateLimited) {
+      renderWidget();
+      return {
+        ok: false,
+        status: 'RATE_LIMITED',
+        clickedCount,
+        failedCount: failedCount + 1,
+        remainingCount: findPokeBackButtons().length
+      };
+    }
 
     const remainingButtons = findPokeBackButtons();
     state.detectedCount = remainingButtons.length;
@@ -864,6 +1013,14 @@
 
   function getStatusMeta() {
     switch (state.status) {
+      case 'RATE_LIMITED':
+        return {
+          badgeText: '[KENA LIMIT - BERHENTI]',
+          badgeState: 'error',
+          message:
+            state.lastError ||
+            'Tombol Colek kembali ke biru dengan sangat cepat! Akun terkena batasan Facebook. Auto-Colek & Auto-Refresh dihentikan otomatis.'
+        };
       case 'COOLDOWN':
         return {
           badgeText: `[JEDA ANTI-LIMIT ${state.cooldownRemainingSec}d]`,
@@ -887,7 +1044,7 @@
               ? `[AUTO-COLEK | REFRESH ${state.refreshCountdownSec}d]`
               : '[AUTO-COLEK AKTIF]',
           badgeState: 'success',
-          message: `Siaga penuh (Balas Colekan + Tambah Colekan Teman Baru aktif)!${refreshTag} Total sesi: ${state.pokedSessionCount}.`
+          message: `Siaga penuh (Sensor Limit Snap-Back aktif)!${refreshTag} Total sesi: ${state.pokedSessionCount}.`
         };
       }
       case 'DONE':
@@ -935,7 +1092,7 @@
       <div class="cbf-header">
         <div class="cbf-title-group">
           <h2 class="cbf-title">Colek Balik &amp; Tambah Colekan</h2>
-          <p class="cbf-subtitle">Balas + Colek Teman Belum Tercolek</p>
+          <p class="cbf-subtitle">Auto-Stop Saat Kena Batas Limit</p>
         </div>
         <div class="cbf-header-controls">
           <button type="button" id="cbf-speed-btn" class="cbf-icon-btn" aria-label="Ubah mode jeda anti-limit">
@@ -994,6 +1151,7 @@
       document.querySelectorAll('[data-cbf-error-skipped]').forEach((el) => {
         el.removeAttribute('data-cbf-error-skipped');
       });
+      state.isRateLimited = false;
       executeOneClickPokeAll(false);
     });
 
@@ -1009,8 +1167,11 @@
       state.autoWatch = !state.autoWatch;
       localStorage.setItem('cbf_auto_watch', String(state.autoWatch));
       if (state.autoWatch) {
+        state.isRateLimited = false;
+        state.lastError = null;
+        friendLastClickTimeMap.clear();
         state.refreshCountdownSec = state.autoRefreshSec;
-        addLog('Auto-Pantau DIAKTIFKAN: otomatis membalas & mencolek teman yang belum terkena colek.');
+        addLog('Auto-Pantau DIAKTIFKAN: otomatis membalas & berhenti jika tombol mental kembali ke biru.');
         const pending = findPokeBackButtons();
         if (pending.length > 0 && !state.isProcessing) {
           executeOneClickPokeAll(true);
@@ -1034,6 +1195,7 @@
     });
 
     document.getElementById('cbf-rescan-btn').addEventListener('click', () => {
+      state.isRateLimited = false;
       const found = scanPage(true);
       if (found.length === 0) {
         executeAutoRefreshNow('Memuat ulang halaman untuk mencari colekan terbaru...');
@@ -1205,7 +1367,9 @@
 
     const primaryBtn = document.getElementById('cbf-poke-all-btn');
     if (primaryBtn) {
-      if (state.isProcessing) {
+      if (state.isRateLimited) {
+        primaryBtn.textContent = `Kena Limit FB (Klik untuk Coba Lagi)`;
+      } else if (state.isProcessing) {
         primaryBtn.textContent = state.isCoolingDown
           ? `Jeda Anti-Limit (${state.cooldownRemainingSec}d) - Klik untuk Batal`
           : `Hentikan Proses (Tercolek: ${state.currentBatchPoked})`;
@@ -1253,11 +1417,18 @@
       document.querySelectorAll('[data-cbf-error-skipped]').forEach((el) => {
         el.removeAttribute('data-cbf-error-skipped');
       });
+      state.isRateLimited = false;
+      friendLastClickTimeMap.clear();
       return executeOneClickPokeAll(false);
     },
     setAutoWatch: (enabled) => {
       state.autoWatch = Boolean(enabled);
       localStorage.setItem('cbf_auto_watch', String(state.autoWatch));
+      if (state.autoWatch) {
+        state.isRateLimited = false;
+        state.lastError = null;
+        friendLastClickTimeMap.clear();
+      }
       state.refreshCountdownSec = state.autoRefreshSec;
       if (state.autoWatch && !state.isProcessing && findPokeBackButtons().length > 0) {
         executeOneClickPokeAll(true);
@@ -1276,6 +1447,7 @@
       status: state.status,
       isProcessing: state.isProcessing,
       isCoolingDown: state.isCoolingDown,
+      isRateLimited: state.isRateLimited,
       cooldownRemainingSec: state.cooldownRemainingSec,
       autoWatch: state.autoWatch,
       includeSuggestedPokes: state.includeSuggestedPokes,
@@ -1308,6 +1480,7 @@
         return false;
       }
       if (request.action === 'CBF_SCAN') {
+        state.isRateLimited = false;
         scanPage(true);
         sendResponse(window.CBFController.getState());
         return false;
@@ -1340,7 +1513,7 @@
 
   let scanTimeout = null;
   function handlePotentialNewPokes() {
-    if (state.isProcessing) return;
+    if (state.isProcessing || state.isRateLimited) return;
     const buttons = findPokeBackButtons();
     state.detectedCount = buttons.length;
 
@@ -1352,14 +1525,14 @@
       }
     }
 
-    if (state.status !== 'DONE' && state.status !== 'ERROR') {
+    if (state.status !== 'DONE' && state.status !== 'ERROR' && state.status !== 'RATE_LIMITED') {
       state.status = state.autoWatch ? 'WATCHING' : buttons.length > 0 ? 'READY' : 'EMPTY';
     }
     renderWidget();
   }
 
   const observer = new MutationObserver((mutations) => {
-    if (state.isProcessing) return;
+    if (state.isProcessing || state.isRateLimited) return;
     const shouldRescan = mutations.some((m) => {
       const targetNode = m.target && m.target.nodeType === 1 ? m.target : m.target && m.target.parentElement;
       if (targetNode && targetNode.closest && targetNode.closest('#cbf-floating-widget')) {
@@ -1374,9 +1547,8 @@
     }
   });
 
-  // 1-second heartbeat: checks for new poke buttons, scrolls to load unpoked friends halfway through countdown, and refreshes at 0!
   setInterval(() => {
-    if (state.isProcessing || state.isCoolingDown) {
+    if (state.isProcessing || state.isCoolingDown || state.isRateLimited) {
       state.refreshCountdownSec = state.autoRefreshSec;
       return;
     }
@@ -1401,7 +1573,6 @@
       state.refreshCountdownSec = Math.max(0, state.refreshCountdownSec - 1);
       renderWidget();
 
-      // Halfway before full page reload, try scrolling down / clicking See More to find more unpoked friends on the current page!
       if (state.autoScroll && state.refreshCountdownSec === Math.floor(state.autoRefreshSec / 2)) {
         tryLoadMorePokesFromPage();
       }

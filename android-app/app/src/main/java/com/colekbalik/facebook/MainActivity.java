@@ -290,6 +290,13 @@ public class MainActivity extends Activity {
         ) {
             runOnUiThread(() -> {
                 statusBadgeView.setText(badgeText);
+                if (badgeText != null && badgeText.contains("LIMIT")) {
+                    statusBadgeView.setTextColor(Color.parseColor("#FECACA"));
+                    styleRoundedView(statusBadgeView, "#7F1D1D", "#F87171", 4);
+                } else {
+                    statusBadgeView.setTextColor(Color.parseColor("#A7F3D0"));
+                    styleRoundedView(statusBadgeView, "#064E3B", "#34D399", 4);
+                }
                 subtitleView.setText("Siap:" + detectedCount + " (Balik:" + pokeBackCount + "|Baru:" + newPokeCount + ") | Total:" + pokedCount);
 
                 if (isProcessing) {

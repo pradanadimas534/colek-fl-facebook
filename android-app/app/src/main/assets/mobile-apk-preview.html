@@ -343,6 +343,9 @@
           <button type="button" id="apk-load-unpoked-friends-btn" class="apk-btn">
             + Muat Teman Belum Tercolek ("Colek")
           </button>
+          <button type="button" id="apk-simulate-snapback-limit-btn" class="apk-btn">
+            ! Uji Mental Balik ke Biru (Kena Limit)
+          </button>
           <button type="button" id="apk-logout-btn" class="apk-btn">
             Keluar Akun (Logout)
           </button>
@@ -440,6 +443,7 @@
                   class="fb-poke-btn"
                   data-poke-id="${item.id}"
                   data-poke-target="${escapeHtml(item.name)}"
+                  ${item.snapBackLimit ? 'data-simulate-snapback="true"' : ''}
                   ${item.poked ? 'aria-disabled="true"' : ''}
                   aria-label="${escapeHtml(ariaText)}"
                 >${escapeHtml(btnText)}</div>
@@ -453,6 +457,20 @@
             const pid = btn.getAttribute('data-poke-id');
             const target = pokes.find((p) => p.id === pid);
             if (!target || target.poked) return;
+
+            // Simulate Facebook rate-limit behavior: button briefly turns "Dicolek" for 20ms,
+            // then immediately snaps back to blue "Colek balik"!
+            if (target.snapBackLimit) {
+              btn.textContent = 'Dicolek';
+              setTimeout(() => {
+                target.poked = false;
+                btn.removeAttribute('aria-disabled');
+                btn.setAttribute('aria-label', `${target.label} ${target.name}`);
+                btn.textContent = target.label;
+              }, 20);
+              return;
+            }
+
             target.poked = true;
             btn.setAttribute('aria-disabled', 'true');
             btn.setAttribute('aria-label', `Sudah mencolek ${target.name}`);
@@ -525,6 +543,22 @@
 
       window.__CBF_LOAD_MORE_UNPOKED_FRIENDS__ = loadMoreUnpokedFriends;
       document.getElementById('apk-load-unpoked-friends-btn').addEventListener('click', loadMoreUnpokedFriends);
+
+      document.getElementById('apk-simulate-snapback-limit-btn').addEventListener('click', () => {
+        if (!loggedAccount) return;
+        pokes.unshift({
+          id: `snapback-${Date.now()}`,
+          name: 'Akun Mental Biru (Limit FB)',
+          streak: 'Tombol mental kembali ke biru saat diklik karena limit Facebook',
+          label: 'Colek balik',
+          snapBackLimit: true,
+          poked: false
+        });
+        renderAccountFeed();
+        if (window.CBFController) {
+          window.CBFController.scanPage();
+        }
+      });
 
       document.getElementById('apk-logout-btn').addEventListener('click', () => {
         loggedAccount = null;
